@@ -42,7 +42,6 @@
 #include "vtc.h"
 #include "vtc_log.h"
 
-#include "vqueue.h"
 #include "vav.h"
 #include "vrnd.h"
 

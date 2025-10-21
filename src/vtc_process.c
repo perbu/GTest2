@@ -53,8 +53,6 @@
 #include "vre.h"
 #include "vev.h"
 #include "vlu.h"
-#include "vqueue.h"
-#include "vsb.h"
 #include "vsub.h"
 #include "vtim.h"
 

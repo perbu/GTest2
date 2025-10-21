@@ -38,7 +38,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "vqueue.h"
 #include "vsa.h"
 #include "vtc.h"
 
