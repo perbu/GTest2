@@ -84,17 +84,39 @@ struct macro {
 
 static VTAILQ_HEAD(,macro) macro_list = VTAILQ_HEAD_INITIALIZER(macro_list);
 
-static const struct cmds global_cmds[] = {
+static struct cmds global_cmds[] = {
 #define CMD_GLOBAL(n) { CMDS_MAGIC, #n, cmd_##n },
 #include "cmds.h"
 	{ CMDS_MAGIC, NULL, NULL }
 };
 
-static const struct cmds top_cmds[] = {
+static struct cmds top_cmds[] = {
 #define CMD_TOP(n) { CMDS_MAGIC, #n, cmd_##n },
 #include "cmds.h"
 	{ CMDS_MAGIC, NULL, NULL }
 };
+
+struct cmds *
+find_cmd(const char *name)
+{
+	struct cmds *cp;
+
+	AN(name);
+	for (cp = global_cmds; cp->name; cp++) {
+		CHECK_OBJ_NOTNULL(cp, CMDS_MAGIC);
+		AN(cp->name);
+		if (!strcmp(cp->name, name))
+			return (cp);
+	}
+	for (cp = top_cmds; cp->name; cp++) {
+		CHECK_OBJ_NOTNULL(cp, CMDS_MAGIC);
+		AN(cp->name);
+		if (!strcmp(cp->name, name))
+			return (cp);
+	}
+	return (NULL);
+}
+
 
 /**********************************************************************/
 
