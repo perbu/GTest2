@@ -11,3 +11,7 @@ src/.deps/
 src/.dirstamp
 lib/.deps/
 lib/.dirstamp
+
+# Go build artifacts
+bin/
+go.sum
