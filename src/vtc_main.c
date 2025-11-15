@@ -386,13 +386,13 @@ tst_cb(const struct vev *ve, int what)
 			AN(f);
 			if (jp->killed || ecode > 1) {
 				fprintf(f, ":test-result: FAIL\n");
-				fprintf(f, ":global-log-copy: yes\n");
+				fprintf(f, ":copy-in-global-log: yes\n");
 			} else if (ecode) {
 				fprintf(f, ":test-result: SKIP\n");
-				fprintf(f, ":global-log-copy: yes\n");
+				fprintf(f, ":copy-in-global-log: yes\n");
 			} else {
 				fprintf(f, ":test-result: PASS\n");
-				fprintf(f, ":global-log-copy: no\n");
+				fprintf(f, ":copy-in-global-log: no\n");
 			}
 			AZ(fclose(f));
 		}

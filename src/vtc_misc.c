@@ -489,6 +489,10 @@ abstract_uds_works(void)
  *        The test has been started with '-i'
  * root
  *        The test has been invoked by the root user
+ # user <username>
+ *        The <username> user is present
+ # group <groupname>
+ *        The <groupname> group is present
  * user_varnish
  *        The varnish user is present
  * user_vcache
@@ -634,7 +638,25 @@ cmd_feature(CMD_ARGS)
 		FEATURE("workspace_emulator", workspace_emulator);
 		FEATURE("abstract_uds", abstract_uds_works());
 
-		if (!strcmp(feat, "cmd")) {
+		if (!strcmp(feat, "user")) {
+			av++;
+			if (*av == NULL)
+				vtc_fatal(vl, "Missing usern-name");
+			good = 1;
+			if (getpwnam(*av) != NULL)
+				skip = neg;
+			else
+				skip = !neg;
+		} else if (!strcmp(feat, "group")) {
+			av++;
+			if (*av == NULL)
+				vtc_fatal(vl, "Missing usern-name");
+			good = 1;
+			if (getgrnam(*av) != NULL)
+				skip = neg;
+			else
+				skip = !neg;
+		} else if (!strcmp(feat, "cmd")) {
 			good = 1;
 			skip = neg;
 			av++;
