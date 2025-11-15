@@ -489,9 +489,9 @@ abstract_uds_works(void)
  *        The test has been started with '-i'
  * root
  *        The test has been invoked by the root user
- # user <username>
+ * user <username>
  *        The <username> user is present
- # group <groupname>
+ * group <groupname>
  *        The <groupname> group is present
  * user_varnish
  *        The varnish user is present
