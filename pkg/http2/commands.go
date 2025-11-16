@@ -53,7 +53,9 @@ func (c *Conn) TxReq(streamID uint32, opts TxReqOptions) error {
 	endStream := opts.EndStream || len(opts.Body) == 0
 
 	// Send HEADERS frame
+	c.writeMu.Lock()
 	err = WriteHeadersFrame(c.conn, streamID, headerBlock, endStream, true)
+	c.writeMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("failed to write HEADERS frame: %w", err)
 	}
@@ -63,7 +65,9 @@ func (c *Conn) TxReq(streamID uint32, opts TxReqOptions) error {
 
 	// Send DATA frame if there's a body and we haven't set END_STREAM yet
 	if len(opts.Body) > 0 && !endStream {
+		c.writeMu.Lock()
 		err = WriteDataFrame(c.conn, streamID, opts.Body, opts.EndStream)
+		c.writeMu.Unlock()
 		if err != nil {
 			return fmt.Errorf("failed to write DATA frame: %w", err)
 		}
@@ -119,7 +123,9 @@ func (c *Conn) TxResp(streamID uint32, opts TxRespOptions) error {
 	endStream := opts.EndStream || len(opts.Body) == 0
 
 	// Send HEADERS frame
+	c.writeMu.Lock()
 	err = WriteHeadersFrame(c.conn, streamID, headerBlock, endStream, true)
+	c.writeMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("failed to write HEADERS frame: %w", err)
 	}
@@ -129,7 +135,9 @@ func (c *Conn) TxResp(streamID uint32, opts TxRespOptions) error {
 
 	// Send DATA frame if there's a body and we haven't set END_STREAM yet
 	if len(opts.Body) > 0 && !endStream {
+		c.writeMu.Lock()
 		err = WriteDataFrame(c.conn, streamID, opts.Body, opts.EndStream)
+		c.writeMu.Unlock()
 		if err != nil {
 			return fmt.Errorf("failed to write DATA frame: %w", err)
 		}
@@ -183,7 +191,9 @@ func (c *Conn) TxData(streamID uint32, data []byte, endStream bool) error {
 		return fmt.Errorf("stream %d not found", streamID)
 	}
 
+	c.writeMu.Lock()
 	err := WriteDataFrame(c.conn, streamID, data, endStream)
+	c.writeMu.Unlock()
 	if err != nil {
 		return err
 	}
