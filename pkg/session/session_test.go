@@ -3,7 +3,7 @@ package session
 import (
 	"testing"
 
-	"github.com/perbu/gvtest/pkg/logging"
+	"github.com/perbu/GTest/pkg/logging"
 )
 
 func TestNew(t *testing.T) {

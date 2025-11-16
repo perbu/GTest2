@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/perbu/gvtest/pkg/client"
-	"github.com/perbu/gvtest/pkg/logging"
-	"github.com/perbu/gvtest/pkg/macro"
-	"github.com/perbu/gvtest/pkg/server"
+	"github.com/perbu/GTest/pkg/client"
+	"github.com/perbu/GTest/pkg/logging"
+	"github.com/perbu/GTest/pkg/macro"
+	"github.com/perbu/GTest/pkg/server"
 )
 
 // TestPhase2_ServerStartRandomPort tests that a server can start on a random port

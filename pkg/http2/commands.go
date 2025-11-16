@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/perbu/gvtest/pkg/hpack"
+	"github.com/perbu/GTest/pkg/hpack"
 )
 
 // TxReqOptions represents options for sending an HTTP/2 request

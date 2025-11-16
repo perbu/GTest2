@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/perbu/gvtest/pkg/logging"
+	"github.com/perbu/GTest/pkg/logging"
 )
 
 // Barrier represents a named synchronization barrier

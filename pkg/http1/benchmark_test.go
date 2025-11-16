@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/perbu/gvtest/pkg/logging"
+	"github.com/perbu/GTest/pkg/logging"
 )
 
 // BenchmarkParseRequestLine benchmarks HTTP request line parsing

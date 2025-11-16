@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/perbu/gvtest/pkg/http1"
-	"github.com/perbu/gvtest/pkg/logging"
+	"github.com/perbu/GTest/pkg/http1"
+	"github.com/perbu/GTest/pkg/logging"
 )
 
 // TestPhase3_BasicHTTPRequest tests sending and receiving HTTP requests

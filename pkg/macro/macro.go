@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/perbu/gvtest/pkg/logging"
+	"github.com/perbu/GTest/pkg/logging"
 )
 
 // Store manages macro definitions and expansion

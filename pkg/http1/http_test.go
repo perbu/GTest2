@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/perbu/gvtest/pkg/logging"
+	"github.com/perbu/GTest/pkg/logging"
 )
 
 // mockConn is a mock connection for testing

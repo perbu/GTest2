@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/perbu/gvtest/pkg/logging"
-	gnet "github.com/perbu/gvtest/pkg/net"
-	"github.com/perbu/gvtest/pkg/session"
+	"github.com/perbu/GTest/pkg/logging"
+	gnet "github.com/perbu/GTest/pkg/net"
+	"github.com/perbu/GTest/pkg/session"
 )
 
 // ProxyVersion represents the PROXY protocol version

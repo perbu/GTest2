@@ -2,7 +2,7 @@
 package vtc
 
 import (
-	"github.com/perbu/gvtest/pkg/macro"
+	"github.com/perbu/GTest/pkg/macro"
 )
 
 // MacroStore is an alias for macro.Store for backward compatibility

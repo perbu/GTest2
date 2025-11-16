@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/perbu/gvtest/pkg/logging"
-	"github.com/perbu/gvtest/pkg/vtc"
+	"github.com/perbu/GTest/pkg/logging"
+	"github.com/perbu/GTest/pkg/vtc"
 )
 
 var (

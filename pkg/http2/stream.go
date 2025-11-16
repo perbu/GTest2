@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/perbu/gvtest/pkg/hpack"
+	"github.com/perbu/GTest/pkg/hpack"
 )
 
 // StreamState represents the state of an HTTP/2 stream
