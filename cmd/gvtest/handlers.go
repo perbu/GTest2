@@ -3,8 +3,11 @@ package main
 
 import (
 	"fmt"
+	"net"
+	"strings"
 
 	"github.com/perbu/GTest/pkg/client"
+	"github.com/perbu/GTest/pkg/http1"
 	"github.com/perbu/GTest/pkg/logging"
 	"github.com/perbu/GTest/pkg/server"
 	"github.com/perbu/GTest/pkg/vtc"
@@ -15,6 +18,41 @@ func RegisterBuiltinCommands() {
 	// Register client and server commands (Phase 2+)
 	vtc.RegisterCommand("client", cmdClient, vtc.FlagNone)
 	vtc.RegisterCommand("server", cmdServer, vtc.FlagNone)
+}
+
+// nodeToSpec converts AST child nodes to a spec string
+func nodeToSpec(children []*vtc.Node) string {
+	var lines []string
+	for _, child := range children {
+		if child.Type == "command" {
+			line := child.Name
+			if len(child.Args) > 0 {
+				line += " " + strings.Join(child.Args, " ")
+			}
+			lines = append(lines, line)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// createHTTP1ProcessFunc creates a processFunc for HTTP/1 server connections
+func createHTTP1ProcessFunc(spec string) server.ProcessFunc {
+	return func(conn net.Conn, specStr string, listenAddr string) error {
+		logger := logging.NewLogger("http")
+		h := http1.New(conn, logger)
+		handler := http1.NewHandler(h)
+		return handler.ProcessSpec(spec)
+	}
+}
+
+// createHTTP1ClientProcessFunc creates a processFunc for HTTP/1 client connections
+func createHTTP1ClientProcessFunc(spec string) client.ProcessFunc {
+	return func(conn net.Conn, specStr string) error {
+		logger := logging.NewLogger("http")
+		h := http1.New(conn, logger)
+		handler := http1.NewHandler(h)
+		return handler.ProcessSpec(spec)
+	}
 }
 
 // cmdClient implements the "client" command
@@ -45,6 +83,11 @@ func cmdClient(args []string, priv interface{}, logger *logging.Logger) error {
 		ctx.Clients[clientName] = c
 	}
 
+	// Convert child nodes to spec if present
+	if ctx.CurrentNode != nil && len(ctx.CurrentNode.Children) > 0 {
+		c.Spec = nodeToSpec(ctx.CurrentNode.Children)
+	}
+
 	// Parse command options
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -63,7 +106,8 @@ func cmdClient(args []string, priv interface{}, logger *logging.Logger) error {
 
 		case "-start":
 			// Start client in background
-			err := c.Start(nil) // processFunc will be added in Phase 3
+			processFunc := createHTTP1ClientProcessFunc(c.Spec)
+			err := c.Start(processFunc)
 			if err != nil {
 				return fmt.Errorf("client: -start failed: %w", err)
 			}
@@ -74,7 +118,8 @@ func cmdClient(args []string, priv interface{}, logger *logging.Logger) error {
 
 		case "-run":
 			// Run client synchronously
-			err := c.Run(nil) // processFunc will be added in Phase 3
+			processFunc := createHTTP1ClientProcessFunc(c.Spec)
+			err := c.Run(processFunc)
 			if err != nil {
 				return fmt.Errorf("client: -run failed: %w", err)
 			}
@@ -165,6 +210,11 @@ func cmdServer(args []string, priv interface{}, logger *logging.Logger) error {
 		ctx.Servers[serverName] = s
 	}
 
+	// Convert child nodes to spec if present
+	if ctx.CurrentNode != nil && len(ctx.CurrentNode.Children) > 0 {
+		s.Spec = nodeToSpec(ctx.CurrentNode.Children)
+	}
+
 	// Parse command options
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -182,8 +232,9 @@ func cmdServer(args []string, priv interface{}, logger *logging.Logger) error {
 			s.SetListen(addr)
 
 		case "-start":
-			// Start server
-			err := s.Start(nil) // processFunc will be added in Phase 3
+			// Start server with HTTP/1 processFunc
+			processFunc := createHTTP1ProcessFunc(s.Spec)
+			err := s.Start(processFunc)
 			if err != nil {
 				return fmt.Errorf("server: -start failed: %w", err)
 			}
@@ -205,7 +256,8 @@ func cmdServer(args []string, priv interface{}, logger *logging.Logger) error {
 				return fmt.Errorf("server: -dispatch only works on s0")
 			}
 			s.IsDispatch = true
-			err := s.Start(nil)
+			processFunc := createHTTP1ProcessFunc(s.Spec)
+			err := s.Start(processFunc)
 			if err != nil {
 				return fmt.Errorf("server: -dispatch failed: %w", err)
 			}

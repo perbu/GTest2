@@ -103,9 +103,21 @@ func (h *HTTP) getResponseField(name string, parts []string) (string, error) {
 // compare performs the comparison operation
 func compare(actual, op, expected string) (bool, error) {
 	switch op {
-	case "==":
+	case "==", "-eq":
+		// -eq can be either string or numeric, try numeric first
+		if op == "-eq" {
+			actualInt, err1 := strconv.ParseInt(actual, 0, 64)
+			expectedInt, err2 := strconv.ParseInt(expected, 0, 64)
+			if err1 == nil && err2 == nil {
+				return actualInt == expectedInt, nil
+			}
+		}
 		return actual == expected, nil
-	case "!=":
+	case "!=", "-ne":
+		// -ne is numeric not-equal
+		if op == "-ne" {
+			return compareNumeric(actual, "!=", expected)
+		}
 		return actual != expected, nil
 	case "~":
 		// Regex match
@@ -121,8 +133,14 @@ func compare(actual, op, expected string) (bool, error) {
 			return false, fmt.Errorf("invalid regex %s: %w", expected, err)
 		}
 		return !re.MatchString(actual), nil
-	case "<", ">", "<=", ">=":
-		return compareNumeric(actual, op, expected)
+	case "<", "-lt":
+		return compareNumeric(actual, "<", expected)
+	case ">", "-gt":
+		return compareNumeric(actual, ">", expected)
+	case "<=", "-le":
+		return compareNumeric(actual, "<=", expected)
+	case ">=", "-ge":
+		return compareNumeric(actual, ">=", expected)
 	default:
 		return false, fmt.Errorf("unknown operator: %s", op)
 	}
@@ -130,9 +148,9 @@ func compare(actual, op, expected string) (bool, error) {
 
 // compareNumeric performs numeric comparison
 func compareNumeric(actual, op, expected string) (bool, error) {
-	// Try to parse as integers first
-	actualInt, err1 := strconv.ParseInt(actual, 10, 64)
-	expectedInt, err2 := strconv.ParseInt(expected, 10, 64)
+	// Try to parse as integers first (base 0 auto-detects hex with 0x prefix)
+	actualInt, err1 := strconv.ParseInt(actual, 0, 64)
+	expectedInt, err2 := strconv.ParseInt(expected, 0, 64)
 
 	if err1 == nil && err2 == nil {
 		// Both are integers

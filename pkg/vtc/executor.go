@@ -13,17 +13,18 @@ import (
 
 // ExecContext holds the execution context for a VTC test
 type ExecContext struct {
-	Macros      *MacroStore
-	Logger      *logging.Logger
-	TmpDir      string
-	Timeout     time.Duration
-	Failed      bool
-	Skipped     bool
-	SkipReason  string
-	Clients     map[string]interface{} // Will be *client.Client
-	Servers     map[string]interface{} // Will be *server.Server
-	Barriers    map[string]interface{} // Will be *barrier.Barrier
-	Processes   map[string]interface{} // Will be *process.Process
+	Macros       *MacroStore
+	Logger       *logging.Logger
+	TmpDir       string
+	Timeout      time.Duration
+	Failed       bool
+	Skipped      bool
+	SkipReason   string
+	Clients      map[string]interface{} // Will be *client.Client
+	Servers      map[string]interface{} // Will be *server.Server
+	Barriers     map[string]interface{} // Will be *barrier.Barrier
+	Processes    map[string]interface{} // Will be *process.Process
+	CurrentNode  *Node                  // Current AST node being executed
 }
 
 // NewExecContext creates a new execution context
@@ -101,6 +102,9 @@ func (e *TestExecutor) executeNode(node *Node) error {
 		// Generic command - look up by Name
 		cmdName := node.Name
 		args := node.Args
+
+		// Set current node in context so command handlers can access children
+		e.Context.CurrentNode = node
 
 		// Execute the command
 		return e.Registry.Execute(cmdName, args, e.Context, e.Context.Logger)
