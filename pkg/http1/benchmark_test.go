@@ -26,7 +26,6 @@ func BenchmarkParseHeaders(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		h.headers = nil
 		parseHeaders(bytes.NewReader(data), h)
 	}
 }
@@ -35,14 +34,11 @@ func BenchmarkParseHeaders(b *testing.B) {
 func BenchmarkBuildRequest(b *testing.B) {
 	logger := logging.NewLogger("bench")
 	h := &HTTP{
-		Logger:  logger,
-		headers: make(map[string]string),
-		method:  "GET",
-		url:     "/test",
-		proto:   "HTTP/1.1",
+		Logger: logger,
+		Method: "GET",
+		URL:    "/test",
+		Proto:  "HTTP/1.1",
 	}
-	h.headers["Host"] = "example.com"
-	h.headers["User-Agent"] = "gvtest"
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -54,14 +50,12 @@ func BenchmarkBuildRequest(b *testing.B) {
 func BenchmarkBuildResponse(b *testing.B) {
 	logger := logging.NewLogger("bench")
 	h := &HTTP{
-		Logger:  logger,
-		headers: make(map[string]string),
-		status:  200,
-		reason:  "OK",
-		proto:   "HTTP/1.1",
-		body:    []byte("Hello, World!"),
+		Logger: logger,
+		Status: 200,
+		Reason: "OK",
+		Proto:  "HTTP/1.1",
+		Body:   []byte("Hello, World!"),
 	}
-	h.headers["Content-Type"] = "text/plain"
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -82,23 +76,21 @@ func parseRequestLine(data []byte) (string, string, string) {
 
 func parseHeaders(r *bytes.Reader, h *HTTP) error {
 	// Simplified header parsing for benchmark
-	h.headers = make(map[string]string)
+	h.ReqHeaders = make([]string, 0)
 	return nil
 }
 
 func buildRequest(h *HTTP) []byte {
 	var buf bytes.Buffer
-	buf.WriteString(h.method)
+	buf.WriteString(h.Method)
 	buf.WriteByte(' ')
-	buf.WriteString(h.url)
+	buf.WriteString(h.URL)
 	buf.WriteByte(' ')
-	buf.WriteString(h.proto)
+	buf.WriteString(h.Proto)
 	buf.WriteString("\r\n")
 
-	for k, v := range h.headers {
-		buf.WriteString(k)
-		buf.WriteString(": ")
-		buf.WriteString(v)
+	for _, hdr := range h.ReqHeaders {
+		buf.WriteString(hdr)
 		buf.WriteString("\r\n")
 	}
 	buf.WriteString("\r\n")
@@ -108,21 +100,19 @@ func buildRequest(h *HTTP) []byte {
 
 func buildResponse(h *HTTP) []byte {
 	var buf bytes.Buffer
-	buf.WriteString(h.proto)
+	buf.WriteString(h.Proto)
 	buf.WriteByte(' ')
 	buf.WriteString("200")
 	buf.WriteByte(' ')
-	buf.WriteString(h.reason)
+	buf.WriteString(h.Reason)
 	buf.WriteString("\r\n")
 
-	for k, v := range h.headers {
-		buf.WriteString(k)
-		buf.WriteString(": ")
-		buf.WriteString(v)
+	for _, hdr := range h.RespHeaders {
+		buf.WriteString(hdr)
 		buf.WriteString("\r\n")
 	}
 	buf.WriteString("\r\n")
-	buf.Write(h.body)
+	buf.Write(h.Body)
 
 	return buf.Bytes()
 }
