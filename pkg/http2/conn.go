@@ -34,6 +34,9 @@ type Conn struct {
 	decoder   *hpack.Decoder
 	decoderMu sync.Mutex // Protects decoder (must be used sequentially)
 
+	// Write synchronization
+	writeMu sync.Mutex // Protects writes to conn to prevent frame corruption
+
 	// Stream management
 	streams *StreamManager
 
@@ -112,16 +115,13 @@ func (c *Conn) Start() error {
 		}
 	}
 
-	// Start frame receive loop first, before sending SETTINGS
-	// This prevents deadlock when both sides try to send SETTINGS simultaneously
+	// Start frame receive loop before sending SETTINGS
+	// The receive loop handles incoming frames including SETTINGS ACKs
 	go c.frameReceiveLoop()
 
-	// Give the receive loop time to start and begin reading
-	// This ensures it's ready to receive the SETTINGS frame from the remote peer
-	// when using synchronous pipes like net.Pipe()
-	time.Sleep(50 * time.Millisecond)
-
 	// Send initial SETTINGS frame
+	// Note: SETTINGS ACKs are sent asynchronously to prevent deadlock
+	// when both sides exchange SETTINGS simultaneously on synchronous pipes
 	if err := c.SendSettings(false); err != nil {
 		return fmt.Errorf("failed to send SETTINGS: %w", err)
 	}
@@ -138,6 +138,8 @@ func (c *Conn) Stop() error {
 // SendPreface sends the HTTP/2 client connection preface
 func (c *Conn) SendPreface() error {
 	c.logger.Log(3, "Sending HTTP/2 preface")
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	_, err := c.conn.Write([]byte(ClientPreface))
 	return err
 }
@@ -179,6 +181,8 @@ func (c *Conn) SendSettings(ack bool) error {
 	}
 
 	c.logger.Log(3, "Sending SETTINGS (ack=%v, %d settings)", ack, len(settings))
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	return WriteSettingsFrame(c.conn, 0, ack, settings)
 }
 
@@ -317,8 +321,17 @@ func (c *Conn) handleSettings(frame Frame) error {
 		c.decoderMu.Unlock()
 	}
 
-	// Send ACK
-	return c.SendSettingsAck()
+	// Send ACK asynchronously to prevent deadlock with synchronous pipes
+	// When both sides exchange SETTINGS simultaneously, sending ACK in the
+	// receive loop would block, causing deadlock. By sending async, the
+	// receive loop can continue reading while the ACK is being sent.
+	go func() {
+		if err := c.SendSettingsAck(); err != nil {
+			c.logger.Log(1, "Failed to send SETTINGS ACK: %v", err)
+		}
+	}()
+
+	return nil
 }
 
 // handlePing processes a PING frame
@@ -336,7 +349,17 @@ func (c *Conn) handlePing(frame Frame) error {
 	copy(data[:], frame.Payload)
 
 	c.logger.Log(3, "Received PING, sending ACK")
-	return WritePingFrame(c.conn, true, data)
+
+	// Send ACK asynchronously to prevent deadlock with synchronous pipes
+	go func() {
+		c.writeMu.Lock()
+		defer c.writeMu.Unlock()
+		if err := WritePingFrame(c.conn, true, data); err != nil {
+			c.logger.Log(1, "Failed to send PING ACK: %v", err)
+		}
+	}()
+
+	return nil
 }
 
 // handleGoAway processes a GOAWAY frame
@@ -471,11 +494,15 @@ func (c *Conn) NextStreamID() uint32 {
 
 // WriteFrame writes a frame to the connection
 func (c *Conn) WriteFrame(frame Frame) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	return WriteFrame(c.conn, frame)
 }
 
 // WriteRawFrame writes a raw frame with manual control
 func (c *Conn) WriteRawFrame(length uint32, frameType FrameType, flags Flags, streamID uint32, payload []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	return WriteRawFrame(c.conn, length, frameType, flags, streamID, payload)
 }
 

@@ -52,6 +52,8 @@ func (c *Conn) RxSettings() (map[SettingID]uint32, error) {
 // TxPing sends a PING frame
 func (c *Conn) TxPing(ack bool, data [8]byte) error {
 	c.logger.Log(3, "Sending PING (ack=%v)", ack)
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	return WritePingFrame(c.conn, ack, data)
 }
 
@@ -67,6 +69,8 @@ func (c *Conn) RxPing() ([8]byte, error) {
 // TxGoAway sends a GOAWAY frame
 func (c *Conn) TxGoAway(lastStreamID uint32, errorCode uint32, debugData string) error {
 	c.logger.Log(3, "Sending GOAWAY (lastStreamID=%d, errorCode=%d)", lastStreamID, errorCode)
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	return WriteGoAwayFrame(c.conn, lastStreamID, errorCode, []byte(debugData))
 }
 
@@ -80,6 +84,8 @@ func (c *Conn) RxGoAway() error {
 // TxRst sends an RST_STREAM frame
 func (c *Conn) TxRst(streamID uint32, errorCode uint32) error {
 	c.logger.Log(3, "Sending RST_STREAM (stream=%d, errorCode=%d)", streamID, errorCode)
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	return WriteRSTStreamFrame(c.conn, streamID, errorCode)
 }
 
@@ -100,6 +106,8 @@ func (c *Conn) RxRst(streamID uint32) error {
 // TxWinup sends a WINDOW_UPDATE frame
 func (c *Conn) TxWinup(streamID uint32, increment uint32) error {
 	c.logger.Log(3, "Sending WINDOW_UPDATE (stream=%d, increment=%d)", streamID, increment)
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	return WriteWindowUpdateFrame(c.conn, streamID, increment)
 }
 
@@ -125,6 +133,8 @@ func (c *Conn) SendHex(hexData string) error {
 	}
 
 	c.logger.Log(3, "Sending raw hex data: %d bytes", len(data))
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	_, err = c.conn.Write(data)
 	return err
 }
@@ -133,6 +143,8 @@ func (c *Conn) SendHex(hexData string) error {
 func (c *Conn) WriteRaw(length uint32, frameType FrameType, flags Flags, streamID uint32, payload []byte) error {
 	c.logger.Log(3, "Sending raw frame: type=%s, length=%d, flags=0x%x, stream=%d",
 		frameType, length, flags, streamID)
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	return WriteRawFrame(c.conn, length, frameType, flags, streamID, payload)
 }
 
@@ -145,6 +157,8 @@ func (c *Conn) TxPushPromise(streamID uint32, promisedStreamID uint32, headers [
 
 	c.logger.Log(3, "Sending PUSH_PROMISE (stream=%d, promised=%d)", streamID, promisedStreamID)
 
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	return WriteFrame(c.conn, Frame{
 		Header: FrameHeader{
 			Length:   uint32(len(payload)),
@@ -165,6 +179,8 @@ func (c *Conn) TxContinuation(streamID uint32, headerBlock []byte, endHeaders bo
 
 	c.logger.Log(3, "Sending CONTINUATION (stream=%d, END_HEADERS=%v)", streamID, endHeaders)
 
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	return WriteFrame(c.conn, Frame{
 		Header: FrameHeader{
 			Length:   uint32(len(headerBlock)),
@@ -193,6 +209,8 @@ func (c *Conn) TxPriority(streamID uint32, exclusive bool, dependsOn uint32, wei
 	c.logger.Log(3, "Sending PRIORITY (stream=%d, dependsOn=%d, weight=%d, exclusive=%v)",
 		streamID, dependsOn, weight, exclusive)
 
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	return WriteFrame(c.conn, Frame{
 		Header: FrameHeader{
 			Length:   5,
