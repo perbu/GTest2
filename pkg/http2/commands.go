@@ -36,8 +36,10 @@ func (c *Conn) TxReq(streamID uint32, opts TxReqOptions) error {
 		headers = append(headers, hpack.HeaderField{Name: name, Value: value})
 	}
 
-	// Encode headers using HPACK
+	// Encode headers using HPACK (must be serialized)
+	c.encoderMu.Lock()
 	headerBlock, err := c.encoder.Encode(headers)
+	c.encoderMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("failed to encode headers: %w", err)
 	}
@@ -100,8 +102,10 @@ func (c *Conn) TxResp(streamID uint32, opts TxRespOptions) error {
 		headers = append(headers, hpack.HeaderField{Name: name, Value: value})
 	}
 
-	// Encode headers using HPACK
+	// Encode headers using HPACK (must be serialized)
+	c.encoderMu.Lock()
 	headerBlock, err := c.encoder.Encode(headers)
+	c.encoderMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("failed to encode headers: %w", err)
 	}

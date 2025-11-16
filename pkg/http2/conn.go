@@ -29,8 +29,10 @@ type Conn struct {
 	logger *logging.Logger
 
 	// HPACK encoder/decoder
-	encoder *hpack.Encoder
-	decoder *hpack.Decoder
+	encoder   *hpack.Encoder
+	encoderMu sync.Mutex // Protects encoder (must be used sequentially)
+	decoder   *hpack.Decoder
+	decoderMu sync.Mutex // Protects decoder (must be used sequentially)
 
 	// Stream management
 	streams *StreamManager
@@ -44,14 +46,14 @@ type Conn struct {
 	recvWindow int32
 
 	// Control
-	mu              sync.Mutex
-	ctx             context.Context
-	cancel          context.CancelFunc
-	frameRecvLoop   bool
-	lastStreamID    uint32
-	nextStreamID    uint32
-	isClient        bool
-	enforcedFC      bool // Enforce flow control
+	mu             sync.Mutex
+	ctx            context.Context
+	cancel         context.CancelFunc
+	frameRecvLoop  bool
+	lastStreamID   uint32
+	nextStreamID   uint32
+	isClient       bool
+	enforcedFC     bool // Enforce flow control
 }
 
 // NewConn creates a new HTTP/2 connection
@@ -110,13 +112,19 @@ func (c *Conn) Start() error {
 		}
 	}
 
+	// Start frame receive loop first, before sending SETTINGS
+	// This prevents deadlock when both sides try to send SETTINGS simultaneously
+	go c.frameReceiveLoop()
+
+	// Give the receive loop time to start and begin reading
+	// This ensures it's ready to receive the SETTINGS frame from the remote peer
+	// when using synchronous pipes like net.Pipe()
+	time.Sleep(50 * time.Millisecond)
+
 	// Send initial SETTINGS frame
 	if err := c.SendSettings(false); err != nil {
 		return fmt.Errorf("failed to send SETTINGS: %w", err)
 	}
-
-	// Start frame receive loop
-	go c.frameReceiveLoop()
 
 	return nil
 }
@@ -159,14 +167,15 @@ func (c *Conn) ReceivePreface() error {
 
 // SendSettings sends a SETTINGS frame
 func (c *Conn) SendSettings(ack bool) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	var settings []Setting
 
-	settings := make([]Setting, 0, len(c.localSettings))
 	if !ack {
+		c.mu.Lock()
+		settings = make([]Setting, 0, len(c.localSettings))
 		for id, value := range c.localSettings {
 			settings = append(settings, Setting{ID: id, Value: value})
 		}
+		c.mu.Unlock()
 	}
 
 	c.logger.Log(3, "Sending SETTINGS (ack=%v, %d settings)", ack, len(settings))
@@ -181,12 +190,14 @@ func (c *Conn) SendSettingsAck() error {
 // UpdateSetting updates a local setting
 func (c *Conn) UpdateSetting(id SettingID, value uint32) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.localSettings[id] = value
+	c.mu.Unlock()
 
-	// Update encoder/decoder table sizes
+	// Update encoder table size outside of c.mu lock to avoid lock ordering issues
 	if id == SettingHeaderTableSize {
+		c.encoderMu.Lock()
 		c.encoder.SetMaxDynamicTableSize(value)
+		c.encoderMu.Unlock()
 	}
 }
 
@@ -282,17 +293,29 @@ func (c *Conn) handleSettings(frame Frame) error {
 		return err
 	}
 
+	// Update remote settings
+	var needsDecoderUpdate bool
+	var newTableSize uint32
+
 	c.mu.Lock()
 	for _, setting := range settings {
 		c.logger.Log(3, "Received SETTING: %s = %d", setting.ID, setting.Value)
 		c.remoteSettings[setting.ID] = setting.Value
 
-		// Update decoder table size if needed
+		// Track if we need to update decoder table size
 		if setting.ID == SettingHeaderTableSize {
-			c.decoder.SetMaxDynamicTableSize(setting.Value)
+			needsDecoderUpdate = true
+			newTableSize = setting.Value
 		}
 	}
 	c.mu.Unlock()
+
+	// Update decoder table size outside of c.mu lock to avoid lock ordering issues
+	if needsDecoderUpdate {
+		c.decoderMu.Lock()
+		c.decoder.SetMaxDynamicTableSize(newTableSize)
+		c.decoderMu.Unlock()
+	}
 
 	// Send ACK
 	return c.SendSettingsAck()
@@ -358,14 +381,30 @@ func (c *Conn) handleWindowUpdate(frame Frame) error {
 func (c *Conn) handleHeaders(frame Frame) error {
 	stream := c.streams.GetOrCreate(frame.Header.StreamID, fmt.Sprintf("stream-%d", frame.Header.StreamID))
 
-	// Decode HPACK headers
+	// Decode HPACK headers (must be serialized)
+	c.decoderMu.Lock()
 	headers, err := c.decoder.Decode(frame.Payload)
+	c.decoderMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("failed to decode headers: %w", err)
 	}
 
+	// Determine if this is a request or response by checking for pseudo-headers
+	isResponse := false
 	for _, hf := range headers {
-		stream.AddReqHeader(hf.Name, hf.Value)
+		if hf.Name == ":status" {
+			isResponse = true
+			break
+		}
+	}
+
+	// Add headers to stream using the appropriate method
+	for _, hf := range headers {
+		if isResponse {
+			stream.AddRespHeader(hf.Name, hf.Value)
+		} else {
+			stream.AddReqHeader(hf.Name, hf.Value)
+		}
 	}
 
 	endStream := frame.Header.Flags.Has(FlagEndStream)
