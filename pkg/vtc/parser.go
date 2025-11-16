@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/perbu/GTest/pkg/logging"
@@ -285,6 +286,71 @@ func (p *Parser) parseVTest() (*Node, error) {
 }
 
 // parseCommand parses a command with arguments and optional block
+// isCommandKeyword checks if a string is a known command keyword
+func isCommandKeyword(s string) bool {
+	keywords := []string{
+		"rxreq", "txreq", "rxresp", "txresp",
+		"expect", "send", "sendhex", "recv",
+		"delay", "barrier", "shell", "process",
+		"timeout", "gunzip", "client", "server",
+	}
+	for _, kw := range keywords {
+		if s == kw {
+			return true
+		}
+	}
+	return false
+}
+
+// processEscapeSequences processes escape sequences in a string
+// Handles: \0 (null), \n (newline), \r (carriage return), \t (tab), \\ (backslash), etc.
+func processEscapeSequences(s string) string {
+	result := strings.Builder{}
+	i := 0
+	for i < len(s) {
+		if s[i] == '\\' && i+1 < len(s) {
+			switch s[i+1] {
+			case '0':
+				result.WriteByte(0) // null byte
+				i += 2
+			case 'n':
+				result.WriteByte('\n')
+				i += 2
+			case 'r':
+				result.WriteByte('\r')
+				i += 2
+			case 't':
+				result.WriteByte('\t')
+				i += 2
+			case '\\':
+				result.WriteByte('\\')
+				i += 2
+			case 'x':
+				// Hex escape: \xHH
+				if i+3 < len(s) {
+					hexStr := s[i+2 : i+4]
+					if b, err := strconv.ParseUint(hexStr, 16, 8); err == nil {
+						result.WriteByte(byte(b))
+						i += 4
+						continue
+					}
+				}
+				// Invalid hex escape, keep as-is
+				result.WriteByte(s[i])
+				i++
+			default:
+				// Unknown escape, keep the backslash
+				result.WriteByte(s[i])
+				i++
+			}
+		} else {
+			result.WriteByte(s[i])
+			i++
+		}
+	}
+	return result.String()
+}
+
 func (p *Parser) parseCommand() (*Node, error) {
 	cmdToken := p.peek()
 	if cmdToken.Type != TokenCommand && cmdToken.Type != TokenIdentifier {
@@ -300,16 +366,60 @@ func (p *Parser) parseCommand() (*Node, error) {
 		Line: cmdToken.Line,
 	}
 
-	// Collect arguments until we hit a brace or EOF
+	// Collect arguments until we hit EOF, a command block, or another command
 	for {
 		tok := p.peek()
-		if tok.Type == TokenEOF || tok.Type == TokenLBrace || tok.Type == TokenRBrace {
+		if tok.Type == TokenEOF || tok.Type == TokenRBrace {
 			break
 		}
 
 		if tok.Type == TokenCommand {
 			// Next command, stop here
 			break
+		}
+
+		// Check if this is a brace-delimited string (e.g., -body {text})
+		// vs a command block (e.g., server s1 {...})
+		if tok.Type == TokenLBrace {
+			// Peek ahead to determine if this is a string or block
+			// Look for command keywords inside the braces
+			savedPos := p.pos
+			p.consume() // consume {
+
+			firstInside := p.peek()
+			isBlock := false
+
+			// If the first token inside is a command keyword, it's a block
+			if firstInside.Type == TokenCommand || isCommandKeyword(firstInside.Value) {
+				isBlock = true
+			}
+
+			// Restore position
+			p.pos = savedPos
+
+			if isBlock {
+				// This is a command block, break out and handle below
+				break
+			}
+
+			// Treat as brace-delimited string
+			p.consume() // consume {
+			var strParts []string
+			for p.peek().Type != TokenRBrace && p.peek().Type != TokenEOF {
+				strParts = append(strParts, p.peek().Value)
+				p.consume()
+			}
+
+			if p.peek().Type == TokenRBrace {
+				// Process escape sequences in the string
+				rawStr := strings.Join(strParts, " ")
+				processedStr := processEscapeSequences(rawStr)
+				node.Args = append(node.Args, processedStr)
+				p.consume() // consume }
+				continue
+			} else {
+				return nil, fmt.Errorf("line %d: unclosed brace in string", tok.Line)
+			}
 		}
 
 		if tok.Type == TokenString || tok.Type == TokenIdentifier {

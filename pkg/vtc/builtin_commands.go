@@ -67,6 +67,25 @@ func cmdBarrier(args []string, priv interface{}, logger *logging.Logger) error {
 	// Parse options
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		case "cond":
+			// VTest2 syntax: barrier <name> cond <count> [-cyclic]
+			if i+1 >= len(args) {
+				return fmt.Errorf("barrier: cond requires a count")
+			}
+			i++
+			count, err := strconv.Atoi(args[i])
+			if err != nil || count < 1 {
+				return fmt.Errorf("barrier: invalid count: %s", args[i])
+			}
+
+			// Check for -cyclic flag
+			if i+1 < len(args) && args[i+1] == "-cyclic" {
+				b.Cyclic = true
+				i++
+			}
+
+			return b.Start(count)
+
 		case "-start":
 			// Initialize barrier with count
 			count := 1
@@ -82,6 +101,10 @@ func cmdBarrier(args []string, priv interface{}, logger *logging.Logger) error {
 		case "-wait":
 			return b.Wait()
 
+		case "sync":
+			// VTest2 syntax: barrier <name> sync
+			return b.Sync()
+
 		case "-sync":
 			return b.Sync()
 
@@ -95,6 +118,9 @@ func cmdBarrier(args []string, priv interface{}, logger *logging.Logger) error {
 				return fmt.Errorf("barrier: invalid timeout: %w", err)
 			}
 			b.SetTimeout(timeout)
+
+		case "-cyclic":
+			b.Cyclic = true
 
 		default:
 			return fmt.Errorf("barrier: unknown option: %s", args[i])

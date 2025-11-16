@@ -14,6 +14,7 @@ type Barrier struct {
 	Name      string
 	Count     int           // Number of participants required
 	Timeout   time.Duration // Timeout for wait operations
+	Cyclic    bool          // If true, barrier resets automatically
 	Logger    *logging.Logger
 
 	mutex     sync.Mutex

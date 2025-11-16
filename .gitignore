@@ -23,3 +23,10 @@ dist/
 coverage.out
 *.prof
 *.test
+
+# Test scripts and logs
+*.log
+*_tests.sh
+analyze_tests.sh
+check_tests.sh
+run_tests.sh
