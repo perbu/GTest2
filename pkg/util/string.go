@@ -209,9 +209,34 @@ func Lines(s string) []string {
 }
 
 // StripComments removes # comments from a line
+// Comments are only stripped if they appear outside of quoted strings
 func StripComments(line string) string {
-	if idx := strings.IndexByte(line, '#'); idx >= 0 {
-		return line[:idx]
+	inQuote := false
+	escape := false
+
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+
+		if escape {
+			escape = false
+			continue
+		}
+
+		if c == '\\' {
+			escape = true
+			continue
+		}
+
+		if c == '"' {
+			inQuote = !inQuote
+			continue
+		}
+
+		// Only strip comment if we're not inside a quote
+		if c == '#' && !inQuote {
+			return line[:i]
+		}
 	}
+
 	return line
 }
