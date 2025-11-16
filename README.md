@@ -1,162 +1,136 @@
-# VTest2
+# GTest
 
-# The HTTP test-program formerly known as Varnishtest (reiterated)
+HTTP testing framework for testing clients, servers, and proxies with support for intentionally malformed traffic.
 
-This project is the second iteration of the (almost) unvarnished varnishtest
-program, made available as a stand-alone program because it can be used to test
-all sorts of HTTP clients, servers and proxies.
+## What It Does
 
-If you are coming from the original [vtest](https://github.com/vtest/VTest) (now
-also known as vtest1), it should be a plug-in replacement.
+GTest executes test scripts (`.vtc` files) that can:
+- Start HTTP/1 and HTTP/2 servers
+- Connect HTTP/1 and HTTP/2 clients
+- Generate well-formed and intentionally broken HTTP traffic
+- Test edge cases and protocol violations
+- Synchronize multiple clients and servers with barriers
+- Verify request/response content and headers
 
-Poul-Henning & Nils
+## Use Cases
 
-# Build Dependencies
+- Testing HTTP server behavior with malformed requests
+- Validating proxy handling of edge cases
+- Testing HTTP/2 flow control and frame handling
+- Protocol compliance testing
+- Load balancer and reverse proxy validation
+- Testing client error handling
 
-## Linux
+## Building
 
-- libpcre2-dev
-
-# BACKGROUND CORRESPONDENCE
-
-`Date:    Wed, 09 Jan 2019 10:36:14 +0000`
-
-`From:    Poul-Henning Kamp <phk@phk.freebsd.dk>`
-
-`Subject: Re: vtest status`
-
-Personally I am not very keen on turning vtest into a "real" project
-with releases, package-building and all that, because it would cause
-me a lot of work which I don't think brings enough advantages.
-
-The problem for me is that vtc_varnish has a very incestuos
-relationship with varnish internals, internals which we do not want
-to turn into documented or even open APIs, and that means that
-vtc_varnish and varnishd must match versions.
-
-A stand-alone vtest-package would either need to be compiled against
-a specific version of varnish, or have some way to dynamically load
-vtc_varnish from from the varnish source/package it is being used
-against.
-
-But that just moves the problem to the other side of the line, where
-we need to open the internals of vtest up as a documented and
-versioned API...
-
-Some day (H3?) all that work may make sense, but I don't feel we
-are there yet, at least not as far as cost/benefit is concerned.
-
-My suggestion for now, is to let vtest live as a "source code
-library" on github and not build and distribute it as stand-alone
-packages.
-
-Instead it will be up to the projects which use it to import
-and build in their own projects.
-
-That way HAproxy and leave vtc_varnish out of their compilation so
-varnish does not become a build-dependency (or you can conditionally
-compile vtc_varnish in, if it is already there.)
-
-And we can compile it in Varnish including vtc_varnish, and include
-vtc_haproxy in similar fashion. (actually, compilation of 
-vtc_haproxy does not need haproxy to be installed, does it ?)
-
-We should still provide a Makefile in the vtest github project which
-compiles as much as possible (ie: vtc_varnish if it can find varnish
-installed), that will make work on the shared sources easier for
-all of us.
-
-If we decide to do things that way, maybe you should call your
-compiled version something like "hatest", while we stick with
-"varnishtest", so we can reserve the "vtest" name for the future
-runtime-extensible all-singing-and-dancing thing ?
-
-# HISTORY
-
-It was realized that vtest1 maintenance did not go particularly smooth:
-Varnish-Cache and vtest1 were using similar, but not identical code bases and
-synchronizing them was not exactly a fulfilling task.
-
-Vtest2 was recreated using a different methodology than vtest1 in order to have
-as much of a change history with (parts of) the original commits as possible:
-`git filter-repo` was used with `--paths-from-file`
-[git-filter-repo-files.spec](tools/sync/git-filter-repo-files.spec). This
-created the full history of vtest from Varnish-Cache as before the original
-vtest inception. While this new history contained most commits in their original
-form (because most vtest development was still happening in Varnish-Cache,
-actually), it missed some original commits to vtest1, like [this
-example](https://github.com/vtest/VTest/commit/89fc145edb5054bd603df8c543877bf54cc76bfa),
-which went into Varnish-Cache [like
-so](https://github.com/varnishcache/varnish-cache/commit/9784b3984f117250417ee50405ac59d26637e043).
-So, in an effort to be good FOSSitizens, in those cases where vtest1 had the
-original commit, that was used instead by employing mostly manual `git rebase
--i` work with additional minor polish.
-
-# UPDATING AND SYNCING
-
-Most of the sync problems should go away once [vtest2 becomes a submodule of
-Varnish-Cache](https://github.com/varnishcache/varnish-cache/issues/3983): Once
-that has happened, Varnish-Cache maintainers will first make additions to
-vtest2, and then update the submodule in Varnish-Cache. Other contributions will
-also go directly to vtest2.
-
-Yet even in this new scenario, the code in the [lib](lib/) directory of the
-vtest2 code base still comes from Varnish-Cache. To simplify updating this
-shared code, a [script](tools/sync/update-code-from-vc.sh) has been written, which
-basically uses `git filter-repo`, `git format-patch` and `git am` to
-automatically apply patches to the shared code base from Varnish-Cache to vtest.
-
-## `make update`: An easy to use sync recipe
-
-The update process can simply be invoked by running `make update`. By default,
-this clones Varnish-Cache from github - if you want to avoid that and use your
-local repository, you can set and export the `VARNISHSRC` environment variable
-to point to your local Varnish-Cache repository (but make sure you do not push
-any changes which are not in the public Varnish-Cache repository).
-
-The script is very verbose on purpose to help troubleshooting. If all goes well,
-however, its output can be disregarded.
-
-If the script succeeds, it ends with:
-
-```
-SUCCESS - commits have been added
+```bash
+make
 ```
 
-You should now find in your local git repository one commit for each added
-commit from Varnish-Cache concerning [lib/](lib/) and one commit with the
-message _Updated code from varnish-cache_ which updates the [base
-commit](tools/sync/base_commit) for the next invocation of the update tool.
+Binary output: `cmd/gvtest/gvtest`
 
-If there are no changes to apply, the script fails with:
+## Running Tests
 
-```
-error: empty commit set passed
-fatal: cherry-pick failed
+```bash
+./cmd/gvtest/gvtest tests/test.vtc
 ```
 
-## Updating until Varnish-Cache uses vtest as a submodule
+Run multiple tests:
+```bash
+./cmd/gvtest/gvtest tests/*.vtc
+```
 
-Until Varnish-Cache switches to using vtest as a submodule, the update script
-also carries over changes to [src/](src/) from
-[bin/varnishtest](https://github.com/varnishcache/varnish-cache/tree/master/bin/varnishtest).
-This is a one way process, no automation has been added for the
-vtest2->Varnish-Cache direction because that will become obsolete with the
-switch to submodule use.
+Options:
+- `-v`: Verbose output
+- `-q`: Quiet mode
+- `-D name=value`: Define macro
+- `-k`: Keep temporary directories
+- `-t timeout`: Set test timeout
 
-Once the switch has happened, all entries in
-[git-filter-repo-files.spec](tools/sync/git-filter-repo-files.spec) concerning
-[src/](src/) can be removed.
+## Test File Format
 
+Tests are written in VTC (Varnish Test Case) format:
 
+```vtc
+vtest "Simple HTTP test"
 
+server s1 {
+    rxreq
+    expect req.method == "GET"
+    expect req.url == "/test"
+    txresp -status 200 -body "OK"
+} -start
 
-# TODO:
+client c1 -connect ${s1_sock} {
+    txreq -url "/test"
+    rxresp
+    expect resp.status == 200
+    expect resp.body == "OK"
+} -run
+```
 
-* Detect content of config.h as required
+## Known Limitations
 
-# NOT-TODO:
+### Not Implemented
 
-* Autocrappery
+1. **Terminal emulation**: Process commands work but don't emulate VT100 terminals
+   - No `-expect-text ROW COL` support
+   - No `-screen_dump` support
+   - Basic process I/O and text matching only
 
-*EOF*
+2. **Parallel test execution**: `-j` flag is parsed but ignored
+   - All tests run sequentially
+   - Workaround: Use GNU parallel or xargs
+
+3. **Group checking**: `feature group` command not implemented
+   - Tests requiring group membership will skip
+
+4. **Limited platform detection**: Most features assume Linux
+   - May fail on macOS, BSD, Windows
+   - IPv4/IPv6 detection not implemented
+
+5. **Process output macros**: `${pNAME_out}` and `${pNAME_err}` not exported
+
+### Partial Implementations
+
+- Platform-specific features (`SO_RCVTIMEO_WORKS`) use simplified checks
+- Some rarely-used commands not yet ported
+
+See `LIMITATIONS.md` for detailed technical information.
+
+## Weak Spots
+
+- **Performance**: No optimization work done yet; likely slower than C version
+- **Platform support**: Primary target is Linux; other platforms undertested
+- **Error messages**: May not always be clear about failures in complex tests
+- **Memory usage**: No profiling or optimization; may use more memory than necessary
+- **Test coverage**: Core functionality tested, edge cases may have gaps
+
+## Dependencies
+
+### Build Dependencies
+
+Go 1.21 or later
+
+### Runtime Dependencies
+
+None (statically linked binary)
+
+## Platform Support
+
+- **Linux**: Primary target, best tested
+- **macOS**: Should work but less tested
+- **FreeBSD**: May work but untested
+- **Windows**: Not supported
+
+## Documentation
+
+- `LIMITATIONS.md`: Detailed list of missing features
+- `MIGRATION.md`: Migration guide from VTest2
+- `PORT.md`: Implementation plan and phases
+
+## Development Status
+
+This is a port from VTest2 using AI assistance. Core HTTP/1 and HTTP/2 functionality is implemented. Advanced features and platform-specific code may be incomplete.
+
+Based on VTest2 from the Varnish project.
