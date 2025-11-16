@@ -15,3 +15,10 @@ lib/.dirstamp
 # Go build artifacts
 bin/
 go.sum
+build/
+dist/
+
+# Go test artifacts
+coverage.out
+*.prof
+*.test
