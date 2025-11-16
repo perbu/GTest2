@@ -6,45 +6,20 @@ import (
 
 	"github.com/perbu/gvtest/pkg/client"
 	"github.com/perbu/gvtest/pkg/logging"
-	"github.com/perbu/gvtest/pkg/macro"
 	"github.com/perbu/gvtest/pkg/server"
 	"github.com/perbu/gvtest/pkg/vtc"
 )
 
-// TestContext holds the context for a VTC test execution
-type TestContext struct {
-	Macros  *macro.Store
-	Clients map[string]*client.Client
-	Servers map[string]*server.Server
-}
-
-// NewTestContext creates a new test context
-func NewTestContext() *TestContext {
-	return &TestContext{
-		Macros:  macro.New(),
-		Clients: make(map[string]*client.Client),
-		Servers: make(map[string]*server.Server),
-	}
-}
-
 // RegisterBuiltinCommands registers all built-in VTC commands
 func RegisterBuiltinCommands() {
-	// Register Phase 2 commands (client and server)
+	// Register client and server commands (Phase 2+)
 	vtc.RegisterCommand("client", cmdClient, vtc.FlagNone)
 	vtc.RegisterCommand("server", cmdServer, vtc.FlagNone)
-
-	// Other commands will be added in later phases:
-	// vtc.RegisterCommand("barrier", cmdBarrier, vtc.FlagGlobal)
-	// vtc.RegisterCommand("delay", cmdDelay, vtc.FlagGlobal)
-	// vtc.RegisterCommand("shell", cmdShell, vtc.FlagGlobal)
-	// vtc.RegisterCommand("feature", cmdFeature, vtc.FlagNone)
-	// vtc.RegisterCommand("filewrite", cmdFilewrite, vtc.FlagNone)
-	// vtc.RegisterCommand("vtest", cmdVtest, vtc.FlagNone)
 }
 
 // cmdClient implements the "client" command
 func cmdClient(args []string, priv interface{}, logger *logging.Logger) error {
-	ctx, ok := priv.(*TestContext)
+	ctx, ok := priv.(*vtc.ExecContext)
 	if !ok {
 		return fmt.Errorf("invalid context for client command")
 	}
@@ -62,8 +37,10 @@ func cmdClient(args []string, priv interface{}, logger *logging.Logger) error {
 	}
 
 	// Get or create client
-	c, exists := ctx.Clients[clientName]
-	if !exists {
+	var c *client.Client
+	if existing, ok := ctx.Clients[clientName]; ok {
+		c = existing.(*client.Client)
+	} else {
 		c = client.New(logger, clientName)
 		ctx.Clients[clientName] = c
 	}
@@ -162,7 +139,7 @@ func cmdClient(args []string, priv interface{}, logger *logging.Logger) error {
 
 // cmdServer implements the "server" command
 func cmdServer(args []string, priv interface{}, logger *logging.Logger) error {
-	ctx, ok := priv.(*TestContext)
+	ctx, ok := priv.(*vtc.ExecContext)
 	if !ok {
 		return fmt.Errorf("invalid context for server command")
 	}
@@ -180,8 +157,10 @@ func cmdServer(args []string, priv interface{}, logger *logging.Logger) error {
 	}
 
 	// Get or create server
-	s, exists := ctx.Servers[serverName]
-	if !exists {
+	var s *server.Server
+	if existing, ok := ctx.Servers[serverName]; ok {
+		s = existing.(*server.Server)
+	} else {
 		s = server.New(logger, ctx.Macros, serverName)
 		ctx.Servers[serverName] = s
 	}

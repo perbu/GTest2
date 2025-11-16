@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/perbu/gvtest/pkg/logging"
 	"github.com/perbu/gvtest/pkg/vtc"
@@ -17,18 +18,24 @@ var (
 	quiet     = flag.Bool("q", false, "Quiet mode")
 	keepTmp   = flag.Bool("k", false, "Keep temp directories")
 	jobs      = flag.Int("j", 1, "Number of parallel jobs")
-	timeout   = flag.Int("t", 60, "Test timeout in seconds")
+	timeoutSec = flag.Int("t", 60, "Test timeout in seconds")
 	dumpAST   = flag.Bool("dump-ast", false, "Dump AST and exit")
 	version   = flag.Bool("version", false, "Show version")
 )
 
 const (
-	versionString = "gvtest 0.1.0 (Phase 1)"
+	versionString = "gvtest 0.5.0 (Phase 5)"
 	exitPass      = 0
 	exitFail      = 1
 	exitSkip      = 77
 	exitError     = 2
 )
+
+func init() {
+	// Register all built-in commands
+	vtc.RegisterBuiltinCommands()
+	RegisterBuiltinCommands()
+}
 
 func main() {
 	flag.Parse()
@@ -44,6 +51,9 @@ func main() {
 		flag.PrintDefaults()
 		os.Exit(exitError)
 	}
+
+	// TODO: Set up logging verbosity based on flags
+	// For now, logging level is controlled per-logger
 
 	// Process each test file
 	exitCode := exitPass
@@ -66,84 +76,51 @@ func runTest(testFile string) int {
 		logger.Info("Running test: %s", testFile)
 	}
 
-	// Open test file
-	f, err := os.Open(testFile)
-	if err != nil {
-		logger.Error("Failed to open test file: %v", err)
-		return exitError
-	}
-	defer f.Close()
-
 	// Create macro store with default macros
 	macros := vtc.NewMacroStore()
-	setupDefaultMacros(macros, testFile)
+	vtc.SetupDefaultMacros(macros, testFile)
 
-	// Parse the test file
-	parser := vtc.NewParser(f, macros, logger)
-	ast, err := parser.Parse()
-	if err != nil {
-		logger.Error("Parse error: %v", err)
-		return exitError
-	}
-
-	// Dump AST if requested
+	// If just dumping AST, do that
 	if *dumpAST {
+		ast, err := vtc.ParseTestFile(testFile, logger, macros)
+		if err != nil {
+			logger.Error("Parse error: %v", err)
+			return exitError
+		}
 		vtc.DumpAST(ast, 0)
 		return exitPass
 	}
 
-	// Validate AST structure
-	if len(ast.Children) == 0 {
-		logger.Error("Empty test file")
-		return exitError
-	}
+	// Run the test
+	timeout := time.Duration(*timeoutSec) * time.Second
+	code, err := vtc.RunTest(testFile, logger, macros, *keepTmp, timeout)
 
-	// Check for vtest declaration
-	hasVTest := false
-	for _, child := range ast.Children {
-		if child.Type == "vtest" {
-			hasVTest = true
-			if !*quiet {
-				logger.Info("Test: %s", child.Name)
-			}
-			break
+	// Handle different exit codes
+	switch code {
+	case exitPass:
+		if !*quiet {
+			fmt.Printf("✓ %s\n", testName)
+		}
+	case exitSkip:
+		if !*quiet {
+			fmt.Printf("⊘ %s (skipped)\n", testName)
+		}
+	case exitFail:
+		if err != nil {
+			logger.Error("Test failed: %v", err)
+		}
+		if !*quiet {
+			fmt.Printf("✗ %s\n", testName)
+		}
+	case exitError:
+		if err != nil {
+			logger.Error("Test error: %v", err)
+		}
+		if !*quiet {
+			fmt.Printf("✗ %s (error)\n", testName)
 		}
 	}
 
-	if !hasVTest {
-		logger.Warning("No vtest declaration found")
-	}
-
-	// Phase 1: Just parse and validate, don't execute
-	if *verbose {
-		logger.Info("Parsed successfully with %d top-level nodes", len(ast.Children))
-		for i, child := range ast.Children {
-			logger.Debug("Node %d: %s %s (args: %d)", i, child.Type, child.Name, len(child.Args))
-		}
-	}
-
-	if !*quiet {
-		logger.Info("Test parsed successfully")
-		fmt.Printf("✓ %s\n", testName)
-	}
-
-	return exitPass
+	return code
 }
 
-func setupDefaultMacros(macros *vtc.MacroStore, testFile string) {
-	// Set up default macros that would be useful
-	absPath, _ := filepath.Abs(testFile)
-	testDir := filepath.Dir(absPath)
-	testName := filepath.Base(testFile)
-
-	macros.Define("testdir", testDir)
-	macros.Define("testfile", testName)
-	macros.Define("tmpdir", "/tmp") // Will be created per-test in later phases
-
-	// Platform-specific macros
-	macros.Define("platform", "linux")
-	macros.Define("os", "Linux")
-
-	// Version info
-	macros.Define("version", "gvtest-0.1.0")
-}
