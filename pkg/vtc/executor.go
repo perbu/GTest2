@@ -117,7 +117,7 @@ func (e *TestExecutor) executeNode(node *Node) error {
 // RunTest executes a VTC test file
 func RunTest(testFile string, logger *logging.Logger, macros *MacroStore, keepTmp bool, timeout time.Duration) (exitCode int, err error) {
 	// Create temporary directory for this test
-	tmpDir, err := os.MkdirTemp("", "gvtest-*")
+	tmpDir, err := os.MkdirTemp("", "gtest-*")
 	if err != nil {
 		return 2, fmt.Errorf("failed to create temp dir: %w", err)
 	}
@@ -170,7 +170,7 @@ func RunTest(testFile string, logger *logging.Logger, macros *MacroStore, keepTm
 }
 
 // SetupDefaultMacros sets up default macros for a test
-func SetupDefaultMacros(macros *MacroStore, testFile string) {
+func SetupDefaultMacros(macros *MacroStore, testFile string, binaryPath string) {
 	absPath, _ := filepath.Abs(testFile)
 	testDir := filepath.Dir(absPath)
 	testName := filepath.Base(testFile)
@@ -184,7 +184,17 @@ func SetupDefaultMacros(macros *MacroStore, testFile string) {
 	macros.Define("os", "Linux")
 
 	// Version info
-	macros.Define("version", "gvtest-0.1.0")
+	macros.Define("version", "gtest-0.1.0")
+
+	// Binary path macros - for meta-tests that test the test framework itself
+	if binaryPath != "" {
+		absBinaryPath, err := filepath.Abs(binaryPath)
+		if err == nil {
+			macros.Define("gtest", absBinaryPath)
+			// Also define 'vtest' for backward compatibility with original vtest tests
+			macros.Define("vtest", absBinaryPath)
+		}
+	}
 }
 
 // ParseTestFile is a utility function to just parse a test file

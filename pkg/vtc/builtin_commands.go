@@ -162,9 +162,15 @@ func cmdShell(args []string, priv interface{}, logger *logging.Logger) error {
 		return fmt.Errorf("shell: no command specified")
 	}
 
+	// Expand macros in shell command
+	expandedCmd, err := ctx.Macros.Expand(logger, shellCmd)
+	if err != nil {
+		return fmt.Errorf("shell: macro expansion failed: %w", err)
+	}
+
 	// Execute the command
-	logger.Debug("Executing shell command: %s", shellCmd)
-	cmd := exec.Command("sh", "-c", shellCmd)
+	logger.Debug("Executing shell command: %s", expandedCmd)
+	cmd := exec.Command("sh", "-c", expandedCmd)
 	cmd.Dir = ctx.TmpDir
 
 	output, err := cmd.CombinedOutput()

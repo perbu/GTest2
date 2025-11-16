@@ -71,7 +71,7 @@ func (h *HTTP) TxResp(opts *TxRespOptions) error {
 			if opts.Headers == nil {
 				opts.Headers = make(map[string]string)
 			}
-			opts.Headers["Server"] = "gvtest"
+			opts.Headers["Server"] = "gtest"
 		}
 	}
 

@@ -1,4 +1,11 @@
-.PHONY: test test-verbose build clean
+.PHONY: all test test-verbose build clean
+
+# Default target: build the binary and run tests
+all: build test
+
+# Build the main binary
+build:
+	go build -o gtest ./cmd/gtest
 
 # Run tests with proper flags to avoid race conditions
 test:
@@ -8,13 +15,9 @@ test:
 test-verbose:
 	go test -v -p=1 -parallel=1 ./... -timeout=30s
 
-# Build the main binary
-build:
-	go build -o gvtest ./cmd/gvtest
-
 # Clean build artifacts
 clean:
-	rm -f gvtest
+	rm -f gtest
 	go clean -testcache
 
 # Run tests for a specific package

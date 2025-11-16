@@ -342,7 +342,7 @@ func TestTxReq_SimpleGET(t *testing.T) {
 	if !strings.Contains(written, "Host: localhost\r\n") {
 		t.Errorf("Expected Host header in output, got: %s", written)
 	}
-	if !strings.Contains(written, "User-Agent: gvtest\r\n") {
+	if !strings.Contains(written, "User-Agent: gtest\r\n") {
 		t.Errorf("Expected User-Agent header in output, got: %s", written)
 	}
 }
@@ -511,7 +511,7 @@ func TestTxResp_SimpleOK(t *testing.T) {
 	if !strings.Contains(written, "HTTP/1.1 200 OK\r\n") {
 		t.Errorf("Expected status line in output")
 	}
-	if !strings.Contains(written, "Server: gvtest\r\n") {
+	if !strings.Contains(written, "Server: gtest\r\n") {
 		t.Errorf("Expected Server header in output")
 	}
 	if !strings.Contains(written, "Content-Length: 13\r\n") {
@@ -704,7 +704,7 @@ func TestGetResponseHeader(t *testing.T) {
 	h.RespHeaders = []string{
 		"Content-Type: text/html",
 		"Content-Length: 42",
-		"Server: gvtest",
+		"Server: gtest",
 	}
 
 	tests := []struct {
@@ -714,7 +714,7 @@ func TestGetResponseHeader(t *testing.T) {
 	}{
 		{"Exact case", "Content-Type", "text/html"},
 		{"Lower case", "content-length", "42"},
-		{"Upper case", "SERVER", "gvtest"},
+		{"Upper case", "SERVER", "gtest"},
 		{"Not found", "Missing", ""},
 	}
 

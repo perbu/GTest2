@@ -1,4 +1,4 @@
-// Package logging provides thread-safe logging infrastructure for gvtest
+// Package logging provides thread-safe logging infrastructure for gtest
 // Ported from vtc_log.c
 package logging
 

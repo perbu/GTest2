@@ -82,7 +82,7 @@ func (h *HTTP) TxReq(opts *TxReqOptions) error {
 			if opts.Headers == nil {
 				opts.Headers = make(map[string]string)
 			}
-			opts.Headers["User-Agent"] = "gvtest"
+			opts.Headers["User-Agent"] = "gtest"
 		}
 	}
 
