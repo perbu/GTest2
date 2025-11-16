@@ -98,38 +98,54 @@ func (s *Session) Run(
 
 	s.Logger.Log(2, "Started on %s (%d iterations%s)", addr, s.Repeat,
 		map[bool]string{true: " using keepalive", false: ""}[s.Keepalive])
+	s.Logger.Debug("Session.Run starting: name=%s, addr=%s, repeat=%d, keepalive=%v", s.Name, addr, s.Repeat, s.Keepalive)
 
 	for i := 0; i < s.Repeat; i++ {
+		s.Logger.Debug("Session iteration %d/%d starting", i+1, s.Repeat)
+
 		// Connect if we don't have a connection
 		if conn == nil {
+			s.Logger.Debug("No existing connection, calling connectFunc")
 			conn, err = connectFunc()
 			if err != nil {
+				s.Logger.Debug("connectFunc failed: %v", err)
 				return fmt.Errorf("connection failed: %w", err)
 			}
+			s.Logger.Debug("connectFunc succeeded")
+		} else {
+			s.Logger.Debug("Reusing existing connection (keepalive)")
 		}
 
 		// Process the session
+		s.Logger.Debug("Calling processFunc for iteration %d/%d", i+1, s.Repeat)
 		conn, err = processFunc(conn, spec)
 		if err != nil {
+			s.Logger.Debug("processFunc failed: %v", err)
 			if conn != nil {
+				s.Logger.Debug("Closing connection after processFunc error")
 				conn.Close()
 			}
 			return fmt.Errorf("process failed: %w", err)
 		}
+		s.Logger.Debug("processFunc completed successfully for iteration %d/%d", i+1, s.Repeat)
 
 		// Disconnect if not using keepalive
 		if !s.Keepalive && conn != nil {
+			s.Logger.Debug("Not using keepalive, disconnecting after iteration %d/%d", i+1, s.Repeat)
 			if disconnectFunc != nil {
 				disconnectFunc(conn)
 			} else {
 				conn.Close()
 			}
 			conn = nil
+		} else {
+			s.Logger.Debug("Using keepalive, keeping connection open")
 		}
 	}
 
 	// Close connection if keepalive was used
 	if s.Keepalive && conn != nil {
+		s.Logger.Debug("Closing keepalive connection after all iterations")
 		if disconnectFunc != nil {
 			disconnectFunc(conn)
 		} else {
@@ -138,6 +154,7 @@ func (s *Session) Run(
 	}
 
 	s.Logger.Log(2, "Ending")
+	s.Logger.Debug("Session.Run completed successfully for %s", s.Name)
 	return nil
 }
 

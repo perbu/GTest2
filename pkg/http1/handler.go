@@ -20,22 +20,31 @@ func NewHandler(h *HTTP) *Handler {
 // ProcessSpec processes an HTTP command specification string
 // This is the main entry point for executing HTTP commands from VTC specs
 func (h *Handler) ProcessSpec(spec string) error {
+	h.HTTP.Logger.Debug("ProcessSpec called with spec length: %d", len(spec))
+
 	// Parse the spec into lines
 	lines := strings.Split(spec, "\n")
+	h.HTTP.Logger.Debug("ProcessSpec parsed %d lines", len(lines))
 
-	for _, line := range lines {
+	for i, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 
+		h.HTTP.Logger.Debug("Processing line %d: %s", i+1, line)
+
 		// Parse the command line
 		err := h.ProcessCommand(line)
 		if err != nil {
+			h.HTTP.Logger.Debug("Command failed on line %d: %v", i+1, err)
 			return fmt.Errorf("command '%s' failed: %w", line, err)
 		}
+
+		h.HTTP.Logger.Debug("Line %d completed successfully", i+1)
 	}
 
+	h.HTTP.Logger.Debug("ProcessSpec completed successfully")
 	return nil
 }
 
@@ -50,30 +59,51 @@ func (h *Handler) ProcessCommand(cmdLine string) error {
 	cmd := tokens[0]
 	args := tokens[1:]
 
+	h.HTTP.Logger.Debug("ProcessCommand: cmd=%s, args=%v", cmd, args)
+
+	var err error
 	switch cmd {
 	case "txreq":
-		return h.handleTxReq(args)
+		h.HTTP.Logger.Debug("Executing txreq")
+		err = h.handleTxReq(args)
 	case "txresp":
-		return h.handleTxResp(args)
+		h.HTTP.Logger.Debug("Executing txresp")
+		err = h.handleTxResp(args)
 	case "rxreq":
-		return h.handleRxReq(args)
+		h.HTTP.Logger.Debug("Executing rxreq")
+		err = h.handleRxReq(args)
 	case "rxresp":
-		return h.handleRxResp(args)
+		h.HTTP.Logger.Debug("Executing rxresp")
+		err = h.handleRxResp(args)
 	case "expect":
-		return h.handleExpect(args)
+		h.HTTP.Logger.Debug("Executing expect")
+		err = h.handleExpect(args)
 	case "send":
-		return h.handleSend(args)
+		h.HTTP.Logger.Debug("Executing send")
+		err = h.handleSend(args)
 	case "sendhex":
-		return h.handleSendHex(args)
+		h.HTTP.Logger.Debug("Executing sendhex")
+		err = h.handleSendHex(args)
 	case "recv":
-		return h.handleRecv(args)
+		h.HTTP.Logger.Debug("Executing recv")
+		err = h.handleRecv(args)
 	case "timeout":
-		return h.handleTimeout(args)
+		h.HTTP.Logger.Debug("Executing timeout")
+		err = h.handleTimeout(args)
 	case "gunzip":
-		return h.HTTP.Gunzip()
+		h.HTTP.Logger.Debug("Executing gunzip")
+		err = h.HTTP.Gunzip()
 	default:
-		return fmt.Errorf("unknown HTTP command: %s", cmd)
+		err = fmt.Errorf("unknown HTTP command: %s", cmd)
 	}
+
+	if err != nil {
+		h.HTTP.Logger.Debug("Command %s failed: %v", cmd, err)
+	} else {
+		h.HTTP.Logger.Debug("Command %s completed successfully", cmd)
+	}
+
+	return err
 }
 
 // handleTxReq processes txreq command

@@ -35,6 +35,9 @@ var (
 	globalStarted bool
 	startTime     time.Time
 	lastTimestamp int = -1
+
+	// Global verbosity setting
+	verboseMode bool
 )
 
 // Logger represents a logger instance with a unique ID
@@ -43,6 +46,20 @@ type Logger struct {
 	buf    bytes.Buffer
 	mutex  sync.Mutex
 	active bool
+}
+
+// SetVerbose sets the global verbose mode
+func SetVerbose(verbose bool) {
+	globalMutex.Lock()
+	defer globalMutex.Unlock()
+	verboseMode = verbose
+}
+
+// IsVerbose returns the current verbose mode
+func IsVerbose() bool {
+	globalMutex.Lock()
+	defer globalMutex.Unlock()
+	return verboseMode
 }
 
 // NewLogger creates a new logger with the given ID
@@ -123,6 +140,11 @@ func (l *Logger) Log(level int, format string, args ...interface{}) {
 		return
 	}
 
+	// Filter debug messages when not in verbose mode
+	if level == LevelDebug && !IsVerbose() {
+		return
+	}
+
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
@@ -144,6 +166,11 @@ func (l *Logger) Log(level int, format string, args ...interface{}) {
 // Dump dumps a string with optional prefix
 // If len is negative, the entire string is dumped
 func (l *Logger) Dump(level int, prefix string, data string, length int) {
+	// Filter debug messages when not in verbose mode
+	if level == LevelDebug && !IsVerbose() {
+		return
+	}
+
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
@@ -190,6 +217,11 @@ func (l *Logger) Dump(level int, prefix string, data string, length int) {
 
 // Hexdump dumps binary data as hexadecimal
 func (l *Logger) Hexdump(level int, prefix string, data []byte) {
+	// Filter debug messages when not in verbose mode
+	if level == LevelDebug && !IsVerbose() {
+		return
+	}
+
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 

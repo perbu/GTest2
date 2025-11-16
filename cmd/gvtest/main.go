@@ -52,8 +52,8 @@ func main() {
 		os.Exit(exitError)
 	}
 
-	// TODO: Set up logging verbosity based on flags
-	// For now, logging level is controlled per-logger
+	// Set up logging verbosity based on flags
+	logging.SetVerbose(*verbose)
 
 	// Process each test file
 	exitCode := exitPass

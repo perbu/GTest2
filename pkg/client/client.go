@@ -79,29 +79,38 @@ func (c *Client) SetProxy(version ProxyVersion, spec string) {
 
 // Connect establishes a connection to the server
 func (c *Client) Connect() (net.Conn, error) {
+	c.Logger.Debug("Connect called for client %s", c.Name)
+
 	if c.ConnectAddr == "" {
+		c.Logger.Debug("No connection address specified for client %s", c.Name)
 		return nil, fmt.Errorf("no connection address specified")
 	}
 
 	c.Logger.Log(3, "Connect to %s", c.ConnectAddr)
+	c.Logger.Debug("Attempting to connect to %s with 10s timeout", c.ConnectAddr)
 
 	// Establish connection with timeout
 	conn, err := gnet.TCPConnect(c.ConnectAddr, 10*time.Second)
 	if err != nil {
+		c.Logger.Debug("Connection failed to %s: %v", c.ConnectAddr, err)
 		return nil, fmt.Errorf("failed to connect to %s: %w", c.ConnectAddr, err)
 	}
 
 	c.Logger.Log(3, "connected fd to %s", c.ConnectAddr)
+	c.Logger.Debug("Successfully connected to %s", c.ConnectAddr)
 
 	// Send PROXY protocol header if configured
 	if c.ProxyVersion != ProxyNone && c.ProxySpec != "" {
+		c.Logger.Debug("Sending PROXY v%d header", c.ProxyVersion)
 		err = c.sendProxyHeader(conn)
 		if err != nil {
+			c.Logger.Debug("Failed to send PROXY header: %v", err)
 			conn.Close()
 			return nil, fmt.Errorf("failed to send PROXY header: %w", err)
 		}
 	}
 
+	c.Logger.Debug("Connect completed successfully for client %s", c.Name)
 	return conn, nil
 }
 
@@ -134,29 +143,41 @@ func (c *Client) Start(processFunc ProcessFunc) error {
 // Run runs the client synchronously (blocking)
 func (c *Client) Run(processFunc ProcessFunc) error {
 	c.Logger.Log(2, "Running client %s", c.Name)
+	c.Logger.Debug("Run called for client %s", c.Name)
 
 	connectFunc := func() (net.Conn, error) {
+		c.Logger.Debug("Session connectFunc calling Connect")
 		return c.Connect()
 	}
 
 	disconnectFunc := func(conn net.Conn) error {
 		c.Logger.Log(3, "closing connection")
+		c.Logger.Debug("Session disconnectFunc closing connection")
 		return conn.Close()
 	}
 
 	procFunc := func(conn net.Conn, spec string) (net.Conn, error) {
 		if processFunc != nil {
+			c.Logger.Debug("Session procFunc calling processFunc")
 			err := processFunc(conn, spec)
+			if err != nil {
+				c.Logger.Debug("Session processFunc returned error: %v", err)
+			} else {
+				c.Logger.Debug("Session processFunc completed successfully")
+			}
 			return conn, err
 		}
 		return conn, nil
 	}
 
+	c.Logger.Debug("Calling session.Run for client %s", c.Name)
 	err := c.Session.Run(c.Spec, c.ConnectAddr, connectFunc, disconnectFunc, procFunc)
 	if err != nil {
+		c.Logger.Debug("Session.Run failed: %v", err)
 		return fmt.Errorf("client session failed: %w", err)
 	}
 
+	c.Logger.Debug("Client %s run completed successfully", c.Name)
 	return nil
 }
 

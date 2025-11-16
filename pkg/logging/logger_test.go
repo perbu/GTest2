@@ -18,6 +18,7 @@ func TestNewLogger(t *testing.T) {
 
 func TestLogLevels(t *testing.T) {
 	ResetOutput()
+	SetVerbose(true) // Enable verbose mode to see debug messages
 	l := NewLogger("test2")
 
 	l.Info("info message")
@@ -31,6 +32,21 @@ func TestLogLevels(t *testing.T) {
 	}
 	if !strings.Contains(output, "debug message") {
 		t.Error("Output doesn't contain debug message")
+	}
+
+	// Test that debug messages are filtered when verbose is false
+	ResetOutput()
+	SetVerbose(false)
+	l2 := NewLogger("test2b")
+	l2.Info("info message 2")
+	l2.Debug("debug message 2")
+
+	output2 := GetOutput()
+	if !strings.Contains(output2, "info message 2") {
+		t.Error("Output doesn't contain info message 2")
+	}
+	if strings.Contains(output2, "debug message 2") {
+		t.Error("Output contains debug message when verbose is false")
 	}
 }
 

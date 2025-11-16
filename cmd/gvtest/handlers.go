@@ -57,6 +57,8 @@ func createHTTP1ClientProcessFunc(spec string) client.ProcessFunc {
 
 // cmdClient implements the "client" command
 func cmdClient(args []string, priv interface{}, logger *logging.Logger) error {
+	logger.Debug("cmdClient called with args: %v", args)
+
 	ctx, ok := priv.(*vtc.ExecContext)
 	if !ok {
 		return fmt.Errorf("invalid context for client command")
@@ -68,6 +70,7 @@ func cmdClient(args []string, priv interface{}, logger *logging.Logger) error {
 
 	clientName := args[0]
 	args = args[1:]
+	logger.Debug("Client name: %s, remaining args: %v", clientName, args)
 
 	// Validate client name starts with 'c'
 	if len(clientName) == 0 || clientName[0] != 'c' {
@@ -78,14 +81,17 @@ func cmdClient(args []string, priv interface{}, logger *logging.Logger) error {
 	var c *client.Client
 	if existing, ok := ctx.Clients[clientName]; ok {
 		c = existing.(*client.Client)
+		logger.Debug("Using existing client: %s", clientName)
 	} else {
 		c = client.New(logger, clientName)
 		ctx.Clients[clientName] = c
+		logger.Debug("Created new client: %s", clientName)
 	}
 
 	// Convert child nodes to spec if present
 	if ctx.CurrentNode != nil && len(ctx.CurrentNode.Children) > 0 {
 		c.Spec = nodeToSpec(ctx.CurrentNode.Children)
+		logger.Debug("Set client spec from child nodes, length: %d", len(c.Spec))
 	}
 
 	// Parse command options
@@ -106,23 +112,31 @@ func cmdClient(args []string, priv interface{}, logger *logging.Logger) error {
 
 		case "-start":
 			// Start client in background
+			logger.Debug("Client %s: processing -start flag", clientName)
 			processFunc := createHTTP1ClientProcessFunc(c.Spec)
 			err := c.Start(processFunc)
 			if err != nil {
+				logger.Debug("Client %s: -start failed: %v", clientName, err)
 				return fmt.Errorf("client: -start failed: %w", err)
 			}
+			logger.Debug("Client %s: -start completed", clientName)
 
 		case "-wait":
 			// Wait for client to complete
+			logger.Debug("Client %s: processing -wait flag", clientName)
 			c.Wait()
+			logger.Debug("Client %s: -wait completed", clientName)
 
 		case "-run":
 			// Run client synchronously
+			logger.Debug("Client %s: processing -run flag", clientName)
 			processFunc := createHTTP1ClientProcessFunc(c.Spec)
 			err := c.Run(processFunc)
 			if err != nil {
+				logger.Debug("Client %s: -run failed: %v", clientName, err)
 				return fmt.Errorf("client: -run failed: %w", err)
 			}
+			logger.Debug("Client %s: -run completed", clientName)
 
 		case "-repeat":
 			if i+1 >= len(args) {
@@ -184,6 +198,8 @@ func cmdClient(args []string, priv interface{}, logger *logging.Logger) error {
 
 // cmdServer implements the "server" command
 func cmdServer(args []string, priv interface{}, logger *logging.Logger) error {
+	logger.Debug("cmdServer called with args: %v", args)
+
 	ctx, ok := priv.(*vtc.ExecContext)
 	if !ok {
 		return fmt.Errorf("invalid context for server command")
@@ -195,6 +211,7 @@ func cmdServer(args []string, priv interface{}, logger *logging.Logger) error {
 
 	serverName := args[0]
 	args = args[1:]
+	logger.Debug("Server name: %s, remaining args: %v", serverName, args)
 
 	// Validate server name starts with 's'
 	if len(serverName) == 0 || serverName[0] != 's' {
@@ -205,14 +222,17 @@ func cmdServer(args []string, priv interface{}, logger *logging.Logger) error {
 	var s *server.Server
 	if existing, ok := ctx.Servers[serverName]; ok {
 		s = existing.(*server.Server)
+		logger.Debug("Using existing server: %s", serverName)
 	} else {
 		s = server.New(logger, ctx.Macros, serverName)
 		ctx.Servers[serverName] = s
+		logger.Debug("Created new server: %s", serverName)
 	}
 
 	// Convert child nodes to spec if present
 	if ctx.CurrentNode != nil && len(ctx.CurrentNode.Children) > 0 {
 		s.Spec = nodeToSpec(ctx.CurrentNode.Children)
+		logger.Debug("Set server spec from child nodes, length: %d", len(s.Spec))
 	}
 
 	// Parse command options
@@ -233,25 +253,34 @@ func cmdServer(args []string, priv interface{}, logger *logging.Logger) error {
 
 		case "-start":
 			// Start server with HTTP/1 processFunc
+			logger.Debug("Server %s: processing -start flag", serverName)
 			processFunc := createHTTP1ProcessFunc(s.Spec)
 			err := s.Start(processFunc)
 			if err != nil {
+				logger.Debug("Server %s: -start failed: %v", serverName, err)
 				return fmt.Errorf("server: -start failed: %w", err)
 			}
+			logger.Debug("Server %s: -start completed", serverName)
 
 		case "-wait":
 			// Wait for server to stop
+			logger.Debug("Server %s: processing -wait flag", serverName)
 			s.Wait()
+			logger.Debug("Server %s: -wait completed", serverName)
 
 		case "-break":
 			// Force stop the server
+			logger.Debug("Server %s: processing -break flag", serverName)
 			err := s.Break()
 			if err != nil {
+				logger.Debug("Server %s: -break failed: %v", serverName, err)
 				return fmt.Errorf("server: -break failed: %w", err)
 			}
+			logger.Debug("Server %s: -break completed", serverName)
 
 		case "-dispatch":
 			// Enable dispatch mode (only for s0)
+			logger.Debug("Server %s: processing -dispatch flag", serverName)
 			if serverName != "s0" {
 				return fmt.Errorf("server: -dispatch only works on s0")
 			}
@@ -259,8 +288,10 @@ func cmdServer(args []string, priv interface{}, logger *logging.Logger) error {
 			processFunc := createHTTP1ProcessFunc(s.Spec)
 			err := s.Start(processFunc)
 			if err != nil {
+				logger.Debug("Server %s: -dispatch failed: %v", serverName, err)
 				return fmt.Errorf("server: -dispatch failed: %w", err)
 			}
+			logger.Debug("Server %s: -dispatch completed", serverName)
 
 		case "-repeat":
 			if i+1 >= len(args) {
