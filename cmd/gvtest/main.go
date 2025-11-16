@@ -72,6 +72,9 @@ func runTest(testFile string) int {
 	testName := filepath.Base(testFile)
 	logger := logging.NewLogger(testName)
 
+	// Reset output before each test
+	logging.ResetOutput()
+
 	if !*quiet {
 		logger.Info("Running test: %s", testFile)
 	}
@@ -95,29 +98,51 @@ func runTest(testFile string) int {
 	timeout := time.Duration(*timeoutSec) * time.Second
 	code, err := vtc.RunTest(testFile, logger, macros, *keepTmp, timeout)
 
+	// Get log output
+	logOutput := logging.GetOutput()
+
 	// Handle different exit codes
 	switch code {
 	case exitPass:
 		if !*quiet {
 			fmt.Printf("✓ %s\n", testName)
 		}
+		// Print logs in verbose mode
+		if *verbose && logOutput != "" {
+			fmt.Print(logOutput)
+		}
 	case exitSkip:
 		if !*quiet {
 			fmt.Printf("⊘ %s (skipped)\n", testName)
 		}
+		if *verbose && logOutput != "" {
+			fmt.Print(logOutput)
+		}
 	case exitFail:
 		if err != nil {
 			logger.Error("Test failed: %v", err)
+			// Refresh log output after adding error
+			logOutput = logging.GetOutput()
 		}
 		if !*quiet {
 			fmt.Printf("✗ %s\n", testName)
 		}
+		// Always print logs on failure (unless quiet)
+		if !*quiet && logOutput != "" {
+			fmt.Print(logOutput)
+		}
 	case exitError:
 		if err != nil {
 			logger.Error("Test error: %v", err)
+			// Refresh log output after adding error
+			logOutput = logging.GetOutput()
 		}
 		if !*quiet {
 			fmt.Printf("✗ %s (error)\n", testName)
+		}
+		// Always print logs on error (unless quiet)
+		if !*quiet && logOutput != "" {
+			fmt.Print(logOutput)
 		}
 	}
 

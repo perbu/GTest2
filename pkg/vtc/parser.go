@@ -192,7 +192,7 @@ func (p *Parser) tokenizeLine(line string, lineNum int) error {
 			p.tokens = append(p.tokens, Token{Type: TokenRBrace, Value: "}", Line: lineNum, Col: col})
 			i++
 			col++
-			isFirstToken = true // After }, the next token could be a new command
+			isFirstToken = false // After }, tokens are arguments, not commands
 			continue
 		}
 
@@ -339,6 +339,26 @@ func (p *Parser) parseCommand() (*Node, error) {
 			return nil, fmt.Errorf("line %d: expected '}' to close block", cmdToken.Line)
 		}
 		p.consume() // consume }
+
+		// After closing block, continue parsing arguments (e.g., "server s1 {...} -start")
+		for {
+			tok := p.peek()
+			if tok.Type == TokenEOF || tok.Type == TokenLBrace || tok.Type == TokenRBrace {
+				break
+			}
+
+			if tok.Type == TokenCommand {
+				// Next command, stop here
+				break
+			}
+
+			if tok.Type == TokenString || tok.Type == TokenIdentifier {
+				node.Args = append(node.Args, tok.Value)
+				p.consume()
+			} else {
+				p.consume() // Skip unknown tokens
+			}
+		}
 	}
 
 	return node, nil
