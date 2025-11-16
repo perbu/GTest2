@@ -1,0 +1,209 @@
+# Makefile for GVTest - Release and Cross-Compilation
+
+# Version information
+VERSION ?= 0.6.0
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Go parameters
+GOCMD=go
+GOBUILD=$(GOCMD) build
+GOTEST=$(GOCMD) test
+GOGET=$(GOCMD) get
+GOMOD=$(GOCMD) mod
+BINARY_NAME=gvtest
+MAIN_PACKAGE=./cmd/gvtest
+
+# Build flags
+LDFLAGS=-ldflags "-X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildDate=$(BUILD_DATE)"
+
+# Output directories
+BUILD_DIR=build
+DIST_DIR=dist
+
+# Platforms for cross-compilation
+PLATFORMS=linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
+
+.PHONY: all build clean test coverage lint help
+.PHONY: build-all release docker
+.DEFAULT_GOAL := help
+
+## help: Show this help message
+help:
+	@echo 'Usage:'
+	@echo '  make <target>'
+	@echo ''
+	@echo 'Targets:'
+	@sed -n 's/^##//p' ${MAKEFILE_LIST} | column -t -s ':' | sed -e 's/^/ /'
+
+## build: Build the binary for current platform
+build:
+	@echo "Building $(BINARY_NAME) v$(VERSION) ($(GIT_COMMIT))..."
+	@mkdir -p $(BUILD_DIR)
+	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PACKAGE)
+	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
+
+## build-all: Build binaries for all supported platforms
+build-all: clean
+	@echo "Building for all platforms..."
+	@mkdir -p $(DIST_DIR)
+	@for platform in $(PLATFORMS); do \
+		GOOS=$${platform%/*} GOARCH=$${platform#*/} $(MAKE) build-platform GOOS=$${platform%/*} GOARCH=$${platform#*/}; \
+	done
+	@echo "All builds complete. Binaries in $(DIST_DIR)/"
+
+## build-platform: Build for a specific platform (internal target)
+build-platform:
+	@echo "Building for $(GOOS)/$(GOARCH)..."
+	@mkdir -p $(DIST_DIR)/$(GOOS)-$(GOARCH)
+	@if [ "$(GOOS)" = "windows" ]; then \
+		GOOS=$(GOOS) GOARCH=$(GOARCH) $(GOBUILD) $(LDFLAGS) -o $(DIST_DIR)/$(GOOS)-$(GOARCH)/$(BINARY_NAME).exe $(MAIN_PACKAGE); \
+	else \
+		GOOS=$(GOOS) GOARCH=$(GOARCH) $(GOBUILD) $(LDFLAGS) -o $(DIST_DIR)/$(GOOS)-$(GOARCH)/$(BINARY_NAME) $(MAIN_PACKAGE); \
+	fi
+
+## test: Run all tests
+test:
+	@echo "Running tests..."
+	$(GOTEST) -v -race -timeout 30s ./pkg/...
+
+## test-short: Run short tests only
+test-short:
+	@echo "Running short tests..."
+	$(GOTEST) -short -race ./pkg/...
+
+## coverage: Run tests with coverage
+coverage:
+	@echo "Running tests with coverage..."
+	@mkdir -p $(BUILD_DIR)
+	$(GOTEST) -coverprofile=$(BUILD_DIR)/coverage.out ./pkg/...
+	$(GOCMD) tool cover -html=$(BUILD_DIR)/coverage.out -o $(BUILD_DIR)/coverage.html
+	@echo "Coverage report: $(BUILD_DIR)/coverage.html"
+
+## bench: Run benchmarks
+bench:
+	@echo "Running benchmarks..."
+	$(GOTEST) -bench=. -benchmem -run=^$$ ./...
+
+## profile-cpu: Run CPU profiling
+profile-cpu:
+	@echo "Running CPU profiling..."
+	@mkdir -p $(BUILD_DIR)
+	$(GOTEST) -cpuprofile=$(BUILD_DIR)/cpu.prof -bench=. -run=^$$ ./...
+	@echo "CPU profile: $(BUILD_DIR)/cpu.prof"
+	@echo "View with: go tool pprof $(BUILD_DIR)/cpu.prof"
+
+## profile-mem: Run memory profiling
+profile-mem:
+	@echo "Running memory profiling..."
+	@mkdir -p $(BUILD_DIR)
+	$(GOTEST) -memprofile=$(BUILD_DIR)/mem.prof -bench=. -run=^$$ ./...
+	@echo "Memory profile: $(BUILD_DIR)/mem.prof"
+	@echo "View with: go tool pprof $(BUILD_DIR)/mem.prof"
+
+## lint: Run linters
+lint:
+	@echo "Running linters..."
+	@if command -v golangci-lint > /dev/null; then \
+		golangci-lint run ./...; \
+	else \
+		echo "golangci-lint not found. Install with:"; \
+		echo "  curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b \$$(go env GOPATH)/bin"; \
+	fi
+
+## fmt: Format code
+fmt:
+	@echo "Formatting code..."
+	gofmt -w .
+	@if command -v goimports > /dev/null; then \
+		goimports -w .; \
+	fi
+
+## vet: Run go vet
+vet:
+	@echo "Running go vet..."
+	$(GOCMD) vet ./...
+
+## clean: Remove build artifacts
+clean:
+	@echo "Cleaning..."
+	@rm -rf $(BUILD_DIR) $(DIST_DIR)
+	@rm -f coverage.out cpu.prof mem.prof
+	@echo "Clean complete"
+
+## deps: Download dependencies
+deps:
+	@echo "Downloading dependencies..."
+	$(GOMOD) download
+	$(GOMOD) verify
+
+## tidy: Tidy go.mod
+tidy:
+	@echo "Tidying go.mod..."
+	$(GOMOD) tidy
+
+## release: Create release archives for all platforms
+release: build-all
+	@echo "Creating release archives..."
+	@mkdir -p $(DIST_DIR)/archives
+	@for platform_dir in $(DIST_DIR)/*-*/; do \
+		platform=$$(basename $$platform_dir); \
+		echo "Creating archive for $$platform..."; \
+		cd $(DIST_DIR)/$$platform && \
+		if ls *.exe 1> /dev/null 2>&1; then \
+			zip ../archives/$(BINARY_NAME)-$(VERSION)-$$platform.zip *; \
+		else \
+			tar czf ../archives/$(BINARY_NAME)-$(VERSION)-$$platform.tar.gz *; \
+		fi && \
+		cd ../..; \
+	done
+	@echo "Release archives created in $(DIST_DIR)/archives/"
+	@ls -lh $(DIST_DIR)/archives/
+
+## docker: Build Docker image
+docker:
+	@echo "Building Docker image..."
+	docker build -t gvtest:$(VERSION) -t gvtest:latest .
+	@echo "Docker image built: gvtest:$(VERSION)"
+
+## docker-push: Push Docker image
+docker-push: docker
+	@echo "Pushing Docker image..."
+	docker push gvtest:$(VERSION)
+	docker push gvtest:latest
+
+## install: Install the binary to $GOPATH/bin
+install:
+	@echo "Installing $(BINARY_NAME)..."
+	$(GOCMD) install $(LDFLAGS) $(MAIN_PACKAGE)
+	@echo "Installed to: $$(go env GOPATH)/bin/$(BINARY_NAME)"
+
+## uninstall: Uninstall the binary from $GOPATH/bin
+uninstall:
+	@echo "Uninstalling $(BINARY_NAME)..."
+	@rm -f $$(go env GOPATH)/bin/$(BINARY_NAME)
+
+## version: Show version information
+version:
+	@echo "Version: $(VERSION)"
+	@echo "Git Commit: $(GIT_COMMIT)"
+	@echo "Build Date: $(BUILD_DATE)"
+
+## check: Run all checks (fmt, vet, lint, test)
+check: fmt vet lint test
+	@echo "All checks passed!"
+
+.PHONY: build-linux build-darwin build-windows
+## build-linux: Build for Linux (amd64 and arm64)
+build-linux:
+	@$(MAKE) build-platform GOOS=linux GOARCH=amd64
+	@$(MAKE) build-platform GOOS=linux GOARCH=arm64
+
+## build-darwin: Build for macOS (amd64 and arm64)
+build-darwin:
+	@$(MAKE) build-platform GOOS=darwin GOARCH=amd64
+	@$(MAKE) build-platform GOOS=darwin GOARCH=arm64
+
+## build-windows: Build for Windows (amd64)
+build-windows:
+	@$(MAKE) build-platform GOOS=windows GOARCH=amd64
