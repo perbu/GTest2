@@ -35,6 +35,4 @@
 
 ## Testing Coverage Gaps
 
-### Missing Unit Tests
-- **pkg/http1**: Only has benchmark tests, no unit tests for core functionality
-- **Recommendation**: Add unit tests for HTTP parsing, building, and edge cases
+All core packages now have unit test coverage.
