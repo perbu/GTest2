@@ -7,10 +7,10 @@ import (
 	"net"
 	"sync"
 
-	"github.com/perbu/gvtest/pkg/logging"
-	gnet "github.com/perbu/gvtest/pkg/net"
-	"github.com/perbu/gvtest/pkg/session"
-	"github.com/perbu/gvtest/pkg/vtc"
+	"github.com/perbu/GTest/pkg/logging"
+	gnet "github.com/perbu/GTest/pkg/net"
+	"github.com/perbu/GTest/pkg/session"
+	"github.com/perbu/GTest/pkg/vtc"
 )
 
 // ProcessFunc is called to process an accepted connection

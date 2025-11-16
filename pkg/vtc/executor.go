@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/perbu/gvtest/pkg/logging"
+	"github.com/perbu/GTest/pkg/logging"
 )
 
 // ExecContext holds the execution context for a VTC test

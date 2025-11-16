@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/perbu/gvtest/pkg/logging"
+	"github.com/perbu/GTest/pkg/logging"
 )
 
 // CommandFlags represents command execution flags

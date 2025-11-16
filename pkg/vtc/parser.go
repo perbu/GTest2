@@ -6,8 +6,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/perbu/gvtest/pkg/logging"
-	"github.com/perbu/gvtest/pkg/util"
+	"github.com/perbu/GTest/pkg/logging"
+	"github.com/perbu/GTest/pkg/util"
 )
 
 // Token types

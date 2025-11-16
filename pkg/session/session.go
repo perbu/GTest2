@@ -8,7 +8,7 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/perbu/gvtest/pkg/logging"
+	"github.com/perbu/GTest/pkg/logging"
 )
 
 // ConnectFunc is a function that establishes a connection and returns a net.Conn

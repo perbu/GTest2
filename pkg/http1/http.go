@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/perbu/gvtest/pkg/logging"
+	"github.com/perbu/GTest/pkg/logging"
 )
 
 const (

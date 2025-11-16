@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/perbu/gvtest/pkg/barrier"
-	"github.com/perbu/gvtest/pkg/logging"
-	"github.com/perbu/gvtest/pkg/process"
+	"github.com/perbu/GTest/pkg/barrier"
+	"github.com/perbu/GTest/pkg/logging"
+	"github.com/perbu/GTest/pkg/process"
 )
 
 // RegisterBuiltinCommands registers all built-in VTC commands

@@ -4,10 +4,10 @@ package main
 import (
 	"fmt"
 
-	"github.com/perbu/gvtest/pkg/client"
-	"github.com/perbu/gvtest/pkg/logging"
-	"github.com/perbu/gvtest/pkg/server"
-	"github.com/perbu/gvtest/pkg/vtc"
+	"github.com/perbu/GTest/pkg/client"
+	"github.com/perbu/GTest/pkg/logging"
+	"github.com/perbu/GTest/pkg/server"
+	"github.com/perbu/GTest/pkg/vtc"
 )
 
 // RegisterBuiltinCommands registers all built-in VTC commands
