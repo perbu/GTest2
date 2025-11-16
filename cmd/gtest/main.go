@@ -35,6 +35,13 @@ func init() {
 	// Register all built-in commands
 	vtc.RegisterBuiltinCommands()
 	RegisterBuiltinCommands()
+
+	// Customize help output
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "gtest [options] test.vtc [test2.vtc ...]\n\nOptions:\n")
+		flag.PrintDefaults()
+		os.Exit(exitFail)
+	}
 }
 
 func main() {

@@ -179,8 +179,44 @@ func (p *Parser) tokenizeLine(line string, lineNum int) error {
 			}
 		}
 
-		// Handle braces (but not as part of ${...})
+		// Handle braces - collect {...} as a single string argument when used inline
 		if c == '{' {
+			// Check if this is an inline braced argument (on the same line) or a command block
+			// If there's a matching } on the same line, treat as string argument
+			braceDepth := 1
+			j := i + 1
+			foundClosing := false
+			for j < len(line) && braceDepth > 0 {
+				if line[j] == '\\' {
+					j++ // Skip escaped character
+					if j < len(line) {
+						j++
+					}
+					continue
+				}
+				if line[j] == '{' {
+					braceDepth++
+				} else if line[j] == '}' {
+					braceDepth--
+					if braceDepth == 0 {
+						foundClosing = true
+						break
+					}
+				}
+				j++
+			}
+
+			// If we found a closing brace on the same line, treat as string argument
+			if foundClosing {
+				value := line[i+1 : j]
+				p.tokens = append(p.tokens, Token{Type: TokenString, Value: value, Line: lineNum, Col: col})
+				i = j + 1
+				col += j - i + 1
+				isFirstToken = false
+				continue
+			}
+
+			// Otherwise, treat as command block delimiter
 			p.tokens = append(p.tokens, Token{Type: TokenLBrace, Value: "{", Line: lineNum, Col: col})
 			i++
 			col++
@@ -324,21 +360,46 @@ func (p *Parser) parseCommand() (*Node, error) {
 	if p.peek().Type == TokenLBrace {
 		p.consume() // consume {
 
-		// Parse block contents
-		for p.peek().Type != TokenRBrace && p.peek().Type != TokenEOF {
-			child, err := p.parseCommand()
-			if err != nil {
-				return nil, err
+		// Special handling for commands that need raw block content (like shell, process)
+		if node.Name == "shell" || node.Name == "process" {
+			// Collect raw block content as a single argument
+			var blockContent []string
+			for p.peek().Type != TokenRBrace && p.peek().Type != TokenEOF {
+				tok := p.peek()
+				// Collect all token types as they represent parts of the script
+				if tok.Type != TokenEOF {
+					blockContent = append(blockContent, tok.Value)
+				}
+				p.consume()
 			}
-			if child != nil {
-				node.Children = append(node.Children, child)
-			}
-		}
 
-		if p.peek().Type != TokenRBrace {
-			return nil, fmt.Errorf("line %d: expected '}' to close block", cmdToken.Line)
+			if p.peek().Type != TokenRBrace {
+				return nil, fmt.Errorf("line %d: expected '}' to close block", cmdToken.Line)
+			}
+			p.consume() // consume }
+
+			// Join block content and add as final argument
+			if len(blockContent) > 0 {
+				// Join all tokens with spaces to reconstruct the command
+				node.Args = append(node.Args, strings.Join(blockContent, " "))
+			}
+		} else {
+			// Parse block contents as commands (normal case for server, client, etc.)
+			for p.peek().Type != TokenRBrace && p.peek().Type != TokenEOF {
+				child, err := p.parseCommand()
+				if err != nil {
+					return nil, err
+				}
+				if child != nil {
+					node.Children = append(node.Children, child)
+				}
+			}
+
+			if p.peek().Type != TokenRBrace {
+				return nil, fmt.Errorf("line %d: expected '}' to close block", cmdToken.Line)
+			}
+			p.consume() // consume }
 		}
-		p.consume() // consume }
 	}
 
 	return node, nil
