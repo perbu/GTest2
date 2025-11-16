@@ -3,6 +3,15 @@ src/*.o
 src/teken_state.h
 src/vtc_h2_dectbl.h
 vtest
+gtest
+
+# Investigation/analysis files (temporary)
+*_ANALYSIS.md
+*_INDEX.md
+*_SUMMARY.md
+*_REFERENCE.md
+*_FLOW.md
+*_VISUAL.md
 
 # droppings from submodule use
 tests/*.log
