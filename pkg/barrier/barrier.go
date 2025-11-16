@@ -79,6 +79,8 @@ func (b *Barrier) WaitTimeout(timeout time.Duration) error {
 	// Wait for others with timeout
 	done := make(chan struct{})
 	go func() {
+		b.mutex.Lock()
+		defer b.mutex.Unlock()
 		for b.cycle == cycle && b.current < b.Count {
 			b.cond.Wait()
 		}
