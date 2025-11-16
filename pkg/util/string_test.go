@@ -91,6 +91,14 @@ func TestStripComments(t *testing.T) {
 		{"text # comment", "text "},
 		{"# full comment", ""},
 		{"text#noSpace", "text"},
+		// Test quoted strings with # inside
+		{`process p7 -write "#"`, `process p7 -write "#"`},
+		{`process p7 -write "\x1b(A#$%\x1b)A"`, `process p7 -write "\x1b(A#$%\x1b)A"`},
+		{`vtest "Test with # in title"`, `vtest "Test with # in title"`},
+		{`text "quoted # string" # comment`, `text "quoted # string" `},
+		// Test escaped quotes
+		{`text "quote with \" escape" # comment`, `text "quote with \" escape" `},
+		{`text "quote with \\" # comment`, `text "quote with \\" `},
 	}
 
 	for _, tt := range tests {

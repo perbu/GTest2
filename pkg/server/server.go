@@ -32,9 +32,13 @@ type Server struct {
 	macros     *vtc.MacroStore
 
 	// Internal
-	stopChan chan struct{}
-	wg       sync.WaitGroup
-	mutex    sync.Mutex
+	stopChan       chan struct{}
+	wg             sync.WaitGroup
+	mutex          sync.Mutex
+	connCount      int // Number of connections handled
+	connCountMutex sync.Mutex
+	stopping       bool // Track if stop has been initiated
+	stoppingMutex  sync.Mutex
 }
 
 // New creates a new server with the given name
@@ -69,6 +73,17 @@ func (s *Server) Start(processFunc ProcessFunc) error {
 		return fmt.Errorf("server %s already running", s.Name)
 	}
 	s.mutex.Unlock()
+
+	// Reset connection counter
+	s.connCountMutex.Lock()
+	s.connCount = 0
+	s.connCountMutex.Unlock()
+
+	// Reset stop channel and stopping flag
+	s.stoppingMutex.Lock()
+	s.stopChan = make(chan struct{})
+	s.stopping = false
+	s.stoppingMutex.Unlock()
 
 	s.Logger.Log(2, "Starting server %s", s.Name)
 
@@ -190,6 +205,18 @@ func (s *Server) handleSessionConnection(conn net.Conn, processFunc ProcessFunc)
 	if err != nil {
 		s.Logger.Error("Session failed: %v", err)
 	}
+
+	// Increment connection counter and check if we should stop
+	s.connCountMutex.Lock()
+	s.connCount++
+	count := s.connCount
+	s.connCountMutex.Unlock()
+
+	// If we've handled the expected number of connections, stop the server
+	if !s.IsDispatch && count >= s.Session.Repeat {
+		s.Logger.Log(2, "Ending")
+		go s.Stop() // Stop in goroutine to avoid deadlock
+	}
 }
 
 // Wait waits for the server to stop
@@ -208,6 +235,15 @@ func (s *Server) Stop() error {
 		return nil
 	}
 	s.mutex.Unlock()
+
+	// Check if already stopping to prevent double-close of stopChan
+	s.stoppingMutex.Lock()
+	if s.stopping {
+		s.stoppingMutex.Unlock()
+		return nil
+	}
+	s.stopping = true
+	s.stoppingMutex.Unlock()
 
 	s.Logger.Log(2, "Stopping server %s", s.Name)
 
