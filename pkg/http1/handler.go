@@ -2,6 +2,7 @@ package http1
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -194,6 +195,17 @@ func (h *Handler) handleTxReq(args []string) error {
 			}
 			opts.BodyLen = n
 			i++
+		case "-bodyfrom":
+			if i+1 >= len(args) {
+				return fmt.Errorf("-bodyfrom requires an argument")
+			}
+			filename := args[i+1]
+			body, err := h.readBodyFromFile(filename)
+			if err != nil {
+				return fmt.Errorf("-bodyfrom failed: %w", err)
+			}
+			opts.Body = body
+			i++
 		case "-chunked":
 			opts.Chunked = true
 		case "-gzip":
@@ -275,6 +287,17 @@ func (h *Handler) handleTxResp(args []string) error {
 				return fmt.Errorf("invalid -bodylen: %w", err)
 			}
 			opts.BodyLen = n
+			i++
+		case "-bodyfrom":
+			if i+1 >= len(args) {
+				return fmt.Errorf("-bodyfrom requires an argument")
+			}
+			filename := args[i+1]
+			body, err := h.readBodyFromFile(filename)
+			if err != nil {
+				return fmt.Errorf("-bodyfrom failed: %w", err)
+			}
+			opts.Body = body
 			i++
 		case "-chunked":
 			opts.Chunked = true
@@ -456,4 +479,13 @@ func tokenizeCommand(line string) []string {
 	}
 
 	return tokens
+}
+
+// readBodyFromFile reads the body content from a file
+func (h *Handler) readBodyFromFile(filename string) ([]byte, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file %s: %w", filename, err)
+	}
+	return data, nil
 }
