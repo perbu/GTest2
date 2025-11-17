@@ -22,7 +22,11 @@ type Process struct {
 	Logger    *logging.Logger
 	TmpDir    string
 
-	// I/O
+	// Terminal emulation (optional)
+	Terminal    *Terminal
+	UseTerminal bool
+
+	// I/O (for non-terminal mode)
 	stdin     io.WriteCloser
 	stdout    io.ReadCloser
 	stderr    io.ReadCloser
@@ -62,6 +66,12 @@ func New(name string, logger *logging.Logger, tmpDir string, command string, arg
 func (p *Process) Start() error {
 	var err error
 
+	// If terminal emulation is requested, use terminal mode
+	if p.UseTerminal {
+		return p.startWithTerminal()
+	}
+
+	// Non-terminal mode (original implementation)
 	// Create temporary files for output capture
 	if p.TmpDir != "" {
 		// Create stdout file
@@ -125,6 +135,34 @@ func (p *Process) Start() error {
 	return nil
 }
 
+// startWithTerminal starts the process with terminal emulation
+func (p *Process) startWithTerminal() error {
+	// Create terminal emulator (default 24x80)
+	terminal, err := NewTerminal(24, 80, p.Logger)
+	if err != nil {
+		return fmt.Errorf("failed to create terminal: %w", err)
+	}
+	p.Terminal = terminal
+
+	// Start process with PTY
+	if err := terminal.Start(p.Cmd); err != nil {
+		return fmt.Errorf("failed to start process with terminal: %w", err)
+	}
+
+	p.started = true
+	p.Logger.Debug("Process %s started with terminal emulation (pid %d)", p.Name, p.Cmd.Process.Pid)
+
+	// Wait for process to complete
+	go func() {
+		p.err = p.Cmd.Wait()
+		terminal.Wait() // Wait for terminal readLoop to finish
+		close(p.done)
+		p.Logger.Debug("Process %s exited (terminal mode)", p.Name)
+	}()
+
+	return nil
+}
+
 // captureOutput captures output from a reader
 func (p *Process) captureOutput(r io.Reader, buf *bytes.Buffer, file *os.File, name string) {
 	scanner := bufio.NewScanner(r)
@@ -163,6 +201,12 @@ func (p *Process) Write(data string) error {
 		return fmt.Errorf("process not started")
 	}
 
+	// Use terminal if in terminal mode
+	if p.UseTerminal && p.Terminal != nil {
+		_, err := p.Terminal.Write([]byte(data))
+		return err
+	}
+
 	_, err := p.stdin.Write([]byte(data))
 	return err
 }
@@ -174,6 +218,10 @@ func (p *Process) WriteLine(line string) error {
 
 // WriteHex writes hex-encoded data to the process stdin
 func (p *Process) WriteHex(hexData string) error {
+	if !p.started {
+		return fmt.Errorf("process not started")
+	}
+
 	// Parse hex string and write binary data
 	data := make([]byte, 0, len(hexData)/2)
 	for i := 0; i < len(hexData); i += 2 {
@@ -183,6 +231,12 @@ func (p *Process) WriteHex(hexData string) error {
 		var b byte
 		fmt.Sscanf(hexData[i:i+2], "%02x", &b)
 		data = append(data, b)
+	}
+
+	// Use terminal if in terminal mode
+	if p.UseTerminal && p.Terminal != nil {
+		_, err := p.Terminal.Write(data)
+		return err
 	}
 
 	_, err := p.stdin.Write(data)
@@ -268,4 +322,43 @@ func (p *Process) ExitCode() int {
 func (p *Process) ExpectText(text string) bool {
 	stdout := p.GetStdout()
 	return bytes.Contains([]byte(stdout), []byte(text))
+}
+
+// ExpectTextAt checks if text appears at specific row/column in terminal
+// Only works in terminal mode. Coordinates are 0-indexed.
+func (p *Process) ExpectTextAt(row, col int, text string, timeout time.Duration) error {
+	if !p.UseTerminal || p.Terminal == nil {
+		return fmt.Errorf("terminal emulation not enabled")
+	}
+
+	return p.Terminal.ExpectText(row, col, text, timeout)
+}
+
+// ScreenDump returns a formatted dump of the terminal screen
+// Only works in terminal mode
+func (p *Process) ScreenDump() (string, error) {
+	if !p.UseTerminal || p.Terminal == nil {
+		return "", fmt.Errorf("terminal emulation not enabled")
+	}
+
+	return p.Terminal.ScreenDump(), nil
+}
+
+// ResizeTerminal changes the terminal dimensions
+// Only works in terminal mode
+func (p *Process) ResizeTerminal(rows, cols int) error {
+	if !p.UseTerminal || p.Terminal == nil {
+		return fmt.Errorf("terminal emulation not enabled")
+	}
+
+	return p.Terminal.Resize(rows, cols)
+}
+
+// GetPTYPath returns the path to the PTY device
+// Only works in terminal mode
+func (p *Process) GetPTYPath() string {
+	if p.Terminal != nil {
+		return p.Terminal.GetPTYPath()
+	}
+	return ""
 }

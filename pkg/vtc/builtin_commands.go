@@ -524,9 +524,21 @@ func cmdProcess(args []string, priv interface{}, logger *logging.Logger) error {
 		args = args[1:]
 	}
 
+	// Parse options and check for flags before -start
+	var useTerminal bool
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-ansi-response" {
+			useTerminal = true
+		}
+	}
+
 	// Parse options
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		case "-ansi-response":
+			// Flag already processed above
+			continue
+
 		case "-start":
 			// Check if command was provided before -start
 			if cmdStr == "" {
@@ -559,6 +571,7 @@ func cmdProcess(args []string, priv interface{}, logger *logging.Logger) error {
 			}
 
 			p = process.New(procName, logger, ctx.TmpDir, cmdParts[0], cmdParts[1:]...)
+			p.UseTerminal = useTerminal
 			ctx.Processes[procName] = p
 
 			// Start the process
@@ -574,6 +587,15 @@ func cmdProcess(args []string, priv interface{}, logger *logging.Logger) error {
 			if p.StderrPath != "" {
 				ctx.Macros.Define(procName+"_err", p.StderrPath)
 				logger.Debug("Exported macro ${%s_err} = %s", procName, p.StderrPath)
+			}
+
+			// Export PTY path if in terminal mode
+			if useTerminal {
+				ptyPath := p.GetPTYPath()
+				if ptyPath != "" {
+					ctx.Macros.Define(procName+"_pty", ptyPath)
+					logger.Debug("Exported macro ${%s_pty} = %s", procName, ptyPath)
+				}
 			}
 
 			return nil
@@ -630,14 +652,82 @@ func cmdProcess(args []string, priv interface{}, logger *logging.Logger) error {
 			if p == nil {
 				return fmt.Errorf("process: process not started")
 			}
-			if i+1 >= len(args) {
-				return fmt.Errorf("process: -expect-text requires text")
+
+			// Check if this is terminal mode with row/col coordinates
+			if p.UseTerminal && i+3 < len(args) {
+				// Format: -expect-text ROW COL "text"
+				i++
+				row, err := strconv.Atoi(args[i])
+				if err != nil {
+					return fmt.Errorf("process: invalid row number: %s", args[i])
+				}
+
+				i++
+				col, err := strconv.Atoi(args[i])
+				if err != nil {
+					return fmt.Errorf("process: invalid column number: %s", args[i])
+				}
+
+				i++
+				text := args[i]
+
+				// Wait for text to appear at position (with 5 second timeout)
+				if err := p.ExpectTextAt(row, col, text, 5*time.Second); err != nil {
+					return err
+				}
+			} else {
+				// Simple text matching (non-terminal mode)
+				if i+1 >= len(args) {
+					return fmt.Errorf("process: -expect-text requires text")
+				}
+				i++
+				time.Sleep(100 * time.Millisecond) // Give process time to output
+				if !p.ExpectText(args[i]) {
+					return fmt.Errorf("process: expected text not found: %s", args[i])
+				}
 			}
+
+		case "-screen_dump":
+			if p == nil {
+				return fmt.Errorf("process: process not started")
+			}
+			if !p.UseTerminal {
+				return fmt.Errorf("process: -screen_dump requires terminal emulation (-ansi-response)")
+			}
+
+			dump, err := p.ScreenDump()
+			if err != nil {
+				return err
+			}
+			logger.Info("Screen dump for %s:\n%s", procName, dump)
+
+		case "-resize":
+			if p == nil {
+				return fmt.Errorf("process: process not started")
+			}
+			if !p.UseTerminal {
+				return fmt.Errorf("process: -resize requires terminal emulation (-ansi-response)")
+			}
+			if i+2 >= len(args) {
+				return fmt.Errorf("process: -resize requires rows and cols")
+			}
+
 			i++
-			time.Sleep(100 * time.Millisecond) // Give process time to output
-			if !p.ExpectText(args[i]) {
-				return fmt.Errorf("process: expected text not found: %s", args[i])
+			rows, err := strconv.Atoi(args[i])
+			if err != nil {
+				return fmt.Errorf("process: invalid rows: %s", args[i])
 			}
+
+			i++
+			cols, err := strconv.Atoi(args[i])
+			if err != nil {
+				return fmt.Errorf("process: invalid cols: %s", args[i])
+			}
+
+			if err := p.ResizeTerminal(rows, cols); err != nil {
+				return err
+			}
+			logger.Debug("Resized terminal %s to %dx%d", procName, rows, cols)
 
 		default:
 			return fmt.Errorf("process: unknown option: %s", args[i])
