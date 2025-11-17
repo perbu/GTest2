@@ -1,0 +1,18 @@
+vtest "Test feature group checking - user IS in root group"
+
+# This test should PASS because root user is in the root group
+feature group root
+
+# If we get here, the group check passed
+server s1 {
+    rxreq
+    expect req.url == "/test"
+    txresp -status 200 -body "OK"
+} -start
+
+client c1 -connect ${s1_sock} {
+    txreq -url "/test"
+    rxresp
+    expect resp.status == 200
+    expect resp.body == "OK"
+} -run

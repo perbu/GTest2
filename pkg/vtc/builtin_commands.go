@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -51,6 +52,43 @@ func hasIPv6() bool {
 	}
 	conn.Close()
 	return true
+}
+
+// isInGroup checks if the current user is a member of the specified group.
+// This works on Linux by checking both the primary group and supplementary groups.
+func isInGroup(groupName string) (bool, error) {
+	// Get current user
+	currentUser, err := user.Current()
+	if err != nil {
+		return false, fmt.Errorf("failed to get current user: %w", err)
+	}
+
+	// Lookup target group by name to get its GID
+	targetGroup, err := user.LookupGroup(groupName)
+	if err != nil {
+		// Group doesn't exist on this system
+		return false, fmt.Errorf("group '%s' not found: %w", groupName, err)
+	}
+
+	// Check if this is the user's primary group
+	if currentUser.Gid == targetGroup.Gid {
+		return true, nil
+	}
+
+	// Get all supplementary group IDs for the current user
+	groupIDs, err := currentUser.GroupIds()
+	if err != nil {
+		return false, fmt.Errorf("failed to get group IDs: %w", err)
+	}
+
+	// Check if user is in the target group (supplementary groups)
+	for _, gid := range groupIDs {
+		if gid == targetGroup.Gid {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // cmdVtest handles the "vtest" command
@@ -328,13 +366,27 @@ func cmdFeature(args []string, priv interface{}, logger *logging.Logger) error {
 			}
 
 		case "group":
-			// Check if running as specific group
+			// Check if running as member of specific group
 			if i+1 >= len(args) {
 				return fmt.Errorf("feature: group requires a group name")
 			}
 			i++
-			// Simplified check - would need proper group checking
-			logger.Warning("feature: group check not fully implemented")
+			groupName := args[i]
+
+			inGroup, err := isInGroup(groupName)
+			if err != nil {
+				// Group doesn't exist or we can't determine membership
+				logger.Debug("Group check failed: %v", err)
+				ctx.Skip(fmt.Sprintf("cannot verify group membership for '%s': %v", groupName, err))
+				return nil
+			}
+
+			if !inGroup {
+				ctx.Skip(fmt.Sprintf("not in group '%s'", groupName))
+				return nil
+			}
+
+			logger.Debug("Group check passed: user is in group '%s'", groupName)
 
 		case "SO_RCVTIMEO_WORKS":
 			// Platform feature check - assume it works on Linux
