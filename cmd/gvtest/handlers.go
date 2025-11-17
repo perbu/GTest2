@@ -8,6 +8,7 @@ import (
 
 	"github.com/perbu/GTest/pkg/client"
 	"github.com/perbu/GTest/pkg/http1"
+	"github.com/perbu/GTest/pkg/http2"
 	"github.com/perbu/GTest/pkg/logging"
 	"github.com/perbu/GTest/pkg/server"
 	"github.com/perbu/GTest/pkg/vtc"
@@ -21,18 +22,61 @@ func RegisterBuiltinCommands() {
 }
 
 // nodeToSpec converts AST child nodes to a spec string
+// Handles nested blocks like stream { ... } -run
 func nodeToSpec(children []*vtc.Node) string {
+	return nodeToSpecWithDelim(children, "\n")
+}
+
+// nodeToSpecWithDelim converts AST child nodes to a spec string with a custom delimiter
+func nodeToSpecWithDelim(children []*vtc.Node, delim string) string {
 	var lines []string
 	for _, child := range children {
 		if child.Type == "command" {
-			line := child.Name
-			if len(child.Args) > 0 {
-				line += " " + strings.Join(child.Args, " ")
+			// Check if this is a command with children (like stream)
+			if len(child.Children) > 0 {
+				// This is a block command - need to include the children
+				// Convert children to a spec string using a special delimiter
+				// so they don't get split by ProcessSpec
+				childSpec := nodeToSpecWithDelim(child.Children, "|||")
+
+				// Build the command line with the child spec as a single argument
+				// Format: stream ID {childSpec} -run
+				line := child.Name
+				if len(child.Args) > 0 {
+					// Add the ID or other args before the spec
+					// Find where the flags (-run, -start, -wait) begin
+					specInserted := false
+					for i, arg := range child.Args {
+						if strings.HasPrefix(arg, "-") {
+							// This is a flag - insert spec before it
+							line += " " + strings.Join(child.Args[0:i], " ")
+							line += " " + childSpec
+							line += " " + strings.Join(child.Args[i:], " ")
+							specInserted = true
+							break
+						}
+					}
+					if !specInserted {
+						// No flags found - just append everything
+						line += " " + strings.Join(child.Args, " ")
+						line += " " + childSpec
+					}
+				} else {
+					// No args, just the spec
+					line += " " + childSpec
+				}
+				lines = append(lines, line)
+			} else {
+				// Simple command without children
+				line := child.Name
+				if len(child.Args) > 0 {
+					line += " " + strings.Join(child.Args, " ")
+				}
+				lines = append(lines, line)
 			}
-			lines = append(lines, line)
 		}
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(lines, delim)
 }
 
 // createHTTP1ProcessFunc creates a processFunc for HTTP/1 server connections
@@ -53,6 +97,65 @@ func createHTTP1ClientProcessFunc(spec string, ctx *vtc.ExecContext) client.Proc
 		h := http1.New(conn, logger)
 		handler := http1.NewHandler(h)
 		handler.SetContext(ctx)
+		return handler.ProcessSpec(spec)
+	}
+}
+
+// isHTTP2Spec detects if a spec is for HTTP/2
+func isHTTP2Spec(spec string) bool {
+	// Check for HTTP/2-specific commands
+	http2Keywords := []string{
+		"txpri", "rxpri",
+		"stream ",
+		"txsettings", "rxsettings",
+		"txping", "rxping",
+		"txgoaway", "rxgoaway",
+		"txwinup", "rxwinup",
+		"txprio", "rxprio",
+	}
+
+	specLower := strings.ToLower(spec)
+	for _, keyword := range http2Keywords {
+		if strings.Contains(specLower, keyword) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// createHTTP2ProcessFunc creates a processFunc for HTTP/2 server connections
+func createHTTP2ProcessFunc(spec string) server.ProcessFunc {
+	return func(conn net.Conn, specStr string, listenAddr string) error {
+		logger := logging.NewLogger("http2")
+		h2conn := http2.NewConn(conn, logger, false) // false = server mode
+		handler := http2.NewHandler(h2conn)
+
+		// Start HTTP/2 connection
+		if err := h2conn.Start(); err != nil {
+			return fmt.Errorf("failed to start HTTP/2 connection: %w", err)
+		}
+		defer h2conn.Stop()
+
+		// Process the spec
+		return handler.ProcessSpec(spec)
+	}
+}
+
+// createHTTP2ClientProcessFunc creates a processFunc for HTTP/2 client connections
+func createHTTP2ClientProcessFunc(spec string) client.ProcessFunc {
+	return func(conn net.Conn, specStr string) error {
+		logger := logging.NewLogger("http2")
+		h2conn := http2.NewConn(conn, logger, true) // true = client mode
+		handler := http2.NewHandler(h2conn)
+
+		// Start HTTP/2 connection
+		if err := h2conn.Start(); err != nil {
+			return fmt.Errorf("failed to start HTTP/2 connection: %w", err)
+		}
+		defer h2conn.Stop()
+
+		// Process the spec
 		return handler.ProcessSpec(spec)
 	}
 }
@@ -115,7 +218,14 @@ func cmdClient(args []string, priv interface{}, logger *logging.Logger) error {
 		case "-start":
 			// Start client in background
 			logger.Debug("Client %s: processing -start flag", clientName)
-			processFunc := createHTTP1ClientProcessFunc(c.Spec, ctx)
+			var processFunc client.ProcessFunc
+			if isHTTP2Spec(c.Spec) {
+				logger.Debug("Client %s: using HTTP/2 handler", clientName)
+				processFunc = createHTTP2ClientProcessFunc(c.Spec)
+			} else {
+				logger.Debug("Client %s: using HTTP/1 handler", clientName)
+				processFunc = createHTTP1ClientProcessFunc(c.Spec, ctx)
+			}
 			err := c.Start(processFunc)
 			if err != nil {
 				logger.Debug("Client %s: -start failed: %v", clientName, err)
@@ -132,7 +242,14 @@ func cmdClient(args []string, priv interface{}, logger *logging.Logger) error {
 		case "-run":
 			// Run client synchronously
 			logger.Debug("Client %s: processing -run flag", clientName)
-			processFunc := createHTTP1ClientProcessFunc(c.Spec, ctx)
+			var processFunc client.ProcessFunc
+			if isHTTP2Spec(c.Spec) {
+				logger.Debug("Client %s: using HTTP/2 handler", clientName)
+				processFunc = createHTTP2ClientProcessFunc(c.Spec)
+			} else {
+				logger.Debug("Client %s: using HTTP/1 handler", clientName)
+				processFunc = createHTTP1ClientProcessFunc(c.Spec, ctx)
+			}
 			err := c.Run(processFunc)
 			if err != nil {
 				logger.Debug("Client %s: -run failed: %v", clientName, err)
@@ -254,9 +371,16 @@ func cmdServer(args []string, priv interface{}, logger *logging.Logger) error {
 			s.SetListen(addr)
 
 		case "-start":
-			// Start server with HTTP/1 processFunc
+			// Start server with appropriate processFunc
 			logger.Debug("Server %s: processing -start flag", serverName)
-			processFunc := createHTTP1ProcessFunc(s.Spec, ctx)
+			var processFunc server.ProcessFunc
+			if isHTTP2Spec(s.Spec) {
+				logger.Debug("Server %s: using HTTP/2 handler", serverName)
+				processFunc = createHTTP2ProcessFunc(s.Spec)
+			} else {
+				logger.Debug("Server %s: using HTTP/1 handler", serverName)
+				processFunc = createHTTP1ProcessFunc(s.Spec, ctx)
+			}
 			err := s.Start(processFunc)
 			if err != nil {
 				logger.Debug("Server %s: -start failed: %v", serverName, err)
@@ -287,7 +411,14 @@ func cmdServer(args []string, priv interface{}, logger *logging.Logger) error {
 				return fmt.Errorf("server: -dispatch only works on s0")
 			}
 			s.IsDispatch = true
-			processFunc := createHTTP1ProcessFunc(s.Spec, ctx)
+			var processFunc server.ProcessFunc
+			if isHTTP2Spec(s.Spec) {
+				logger.Debug("Server %s: using HTTP/2 handler for dispatch", serverName)
+				processFunc = createHTTP2ProcessFunc(s.Spec)
+			} else {
+				logger.Debug("Server %s: using HTTP/1 handler for dispatch", serverName)
+				processFunc = createHTTP1ProcessFunc(s.Spec, ctx)
+			}
 			err := s.Start(processFunc)
 			if err != nil {
 				logger.Debug("Server %s: -dispatch failed: %v", serverName, err)
