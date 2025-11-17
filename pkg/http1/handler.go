@@ -9,12 +9,21 @@ import (
 
 // Handler processes HTTP command specifications
 type Handler struct {
-	HTTP *HTTP
+	HTTP     *HTTP
+	Barriers map[string]interface{} // Optional barrier map for sync commands
 }
 
 // NewHandler creates a new HTTP command handler
 func NewHandler(h *HTTP) *Handler {
-	return &Handler{HTTP: h}
+	return &Handler{
+		HTTP:     h,
+		Barriers: nil, // Will be set by caller if needed
+	}
+}
+
+// SetBarriers sets the barrier map for this handler
+func (h *Handler) SetBarriers(barriers map[string]interface{}) {
+	h.Barriers = barriers
 }
 
 // ProcessSpec processes an HTTP command specification string
@@ -96,6 +105,9 @@ func (h *Handler) ProcessCommand(cmdLine string) error {
 	case "delay":
 		h.HTTP.Logger.Debug("Executing delay")
 		err = h.handleDelay(args)
+	case "barrier":
+		h.HTTP.Logger.Debug("Executing barrier")
+		err = h.handleBarrier(cmd, args)
 	default:
 		err = fmt.Errorf("unknown HTTP command: %s", cmd)
 	}
@@ -364,6 +376,48 @@ func (h *Handler) handleDelay(args []string) error {
 	h.HTTP.Logger.Debug("Delaying for %v", d)
 	time.Sleep(d)
 	return nil
+}
+
+// handleBarrier processes barrier command
+func (h *Handler) handleBarrier(cmd string, args []string) error {
+	if h.Barriers == nil {
+		return fmt.Errorf("barrier command not supported in this context (no barriers available)")
+	}
+
+	if len(args) < 2 {
+		return fmt.Errorf("barrier requires name and action (e.g., 'barrier b1 sync')")
+	}
+
+	barrierName := args[0]
+	action := args[1]
+
+	// Get the barrier
+	barrierObj, ok := h.Barriers[barrierName]
+	if !ok {
+		return fmt.Errorf("barrier %s not found", barrierName)
+	}
+
+	// Import barrier package type
+	// We need to type assert to *barrier.Barrier
+	// Since we can't import barrier here without a circular dependency,
+	// we'll use a Sync() method via interface
+	type barrierSync interface {
+		Sync() error
+	}
+
+	barrier, ok := barrierObj.(barrierSync)
+	if !ok {
+		return fmt.Errorf("invalid barrier object for %s", barrierName)
+	}
+
+	// Execute the action
+	switch action {
+	case "sync":
+		h.HTTP.Logger.Debug("Syncing on barrier %s", barrierName)
+		return barrier.Sync()
+	default:
+		return fmt.Errorf("unknown barrier action: %s", action)
+	}
 }
 
 // tokenizeCommand splits a command line into tokens
