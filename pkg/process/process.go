@@ -6,7 +6,9 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -18,6 +20,7 @@ type Process struct {
 	Name      string
 	Cmd       *exec.Cmd
 	Logger    *logging.Logger
+	TmpDir    string
 
 	// I/O
 	stdin     io.WriteCloser
@@ -25,9 +28,15 @@ type Process struct {
 	stderr    io.ReadCloser
 
 	// Output capture
-	stdoutBuf bytes.Buffer
-	stderrBuf bytes.Buffer
-	mutex     sync.Mutex
+	stdoutBuf  bytes.Buffer
+	stderrBuf  bytes.Buffer
+	stdoutFile *os.File
+	stderrFile *os.File
+	mutex      sync.Mutex
+
+	// Output file paths (for macro export)
+	StdoutPath string
+	StderrPath string
 
 	// State
 	started   bool
@@ -36,13 +45,14 @@ type Process struct {
 }
 
 // New creates a new process manager
-func New(name string, logger *logging.Logger, command string, args ...string) *Process {
+func New(name string, logger *logging.Logger, tmpDir string, command string, args ...string) *Process {
 	cmd := exec.Command(command, args...)
 
 	return &Process{
 		Name:    name,
 		Cmd:     cmd,
 		Logger:  logger,
+		TmpDir:  tmpDir,
 		started: false,
 		done:    make(chan struct{}),
 	}
@@ -52,24 +62,48 @@ func New(name string, logger *logging.Logger, command string, args ...string) *P
 func (p *Process) Start() error {
 	var err error
 
+	// Create temporary files for output capture
+	if p.TmpDir != "" {
+		// Create stdout file
+		p.stdoutFile, err = os.Create(filepath.Join(p.TmpDir, p.Name+".stdout"))
+		if err != nil {
+			return fmt.Errorf("failed to create stdout file: %w", err)
+		}
+		p.StdoutPath = p.stdoutFile.Name()
+
+		// Create stderr file
+		p.stderrFile, err = os.Create(filepath.Join(p.TmpDir, p.Name+".stderr"))
+		if err != nil {
+			p.stdoutFile.Close()
+			return fmt.Errorf("failed to create stderr file: %w", err)
+		}
+		p.StderrPath = p.stderrFile.Name()
+
+		p.Logger.Debug("Created output files: %s, %s", p.StdoutPath, p.StderrPath)
+	}
+
 	// Set up pipes
 	p.stdin, err = p.Cmd.StdinPipe()
 	if err != nil {
+		p.closeOutputFiles()
 		return fmt.Errorf("failed to create stdin pipe: %w", err)
 	}
 
 	p.stdout, err = p.Cmd.StdoutPipe()
 	if err != nil {
+		p.closeOutputFiles()
 		return fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 
 	p.stderr, err = p.Cmd.StderrPipe()
 	if err != nil {
+		p.closeOutputFiles()
 		return fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
 	// Start the process
 	if err := p.Cmd.Start(); err != nil {
+		p.closeOutputFiles()
 		return fmt.Errorf("failed to start process: %w", err)
 	}
 
@@ -77,12 +111,13 @@ func (p *Process) Start() error {
 	p.Logger.Debug("Process %s started (pid %d)", p.Name, p.Cmd.Process.Pid)
 
 	// Start output capture goroutines
-	go p.captureOutput(p.stdout, &p.stdoutBuf, "stdout")
-	go p.captureOutput(p.stderr, &p.stderrBuf, "stderr")
+	go p.captureOutput(p.stdout, &p.stdoutBuf, p.stdoutFile, "stdout")
+	go p.captureOutput(p.stderr, &p.stderrBuf, p.stderrFile, "stderr")
 
 	// Wait for process to complete
 	go func() {
 		p.err = p.Cmd.Wait()
+		p.closeOutputFiles()
 		close(p.done)
 		p.Logger.Debug("Process %s exited", p.Name)
 	}()
@@ -91,16 +126,34 @@ func (p *Process) Start() error {
 }
 
 // captureOutput captures output from a reader
-func (p *Process) captureOutput(r io.Reader, buf *bytes.Buffer, name string) {
+func (p *Process) captureOutput(r io.Reader, buf *bytes.Buffer, file *os.File, name string) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
+		lineWithNewline := line + "\n"
+
 		p.mutex.Lock()
-		buf.WriteString(line)
-		buf.WriteString("\n")
+		buf.WriteString(lineWithNewline)
+
+		// Also write to file if it exists
+		if file != nil {
+			file.WriteString(lineWithNewline)
+		}
 		p.mutex.Unlock()
 
 		p.Logger.Debug("Process %s [%s]: %s", p.Name, name, line)
+	}
+}
+
+// closeOutputFiles closes the stdout and stderr files
+func (p *Process) closeOutputFiles() {
+	if p.stdoutFile != nil {
+		p.stdoutFile.Close()
+		p.stdoutFile = nil
+	}
+	if p.stderrFile != nil {
+		p.stderrFile.Close()
+		p.stderrFile = nil
 	}
 }
 

@@ -1,0 +1,19 @@
+vtest "Test process output macros (${pNAME_out} and ${pNAME_err})"
+
+# Start a process that outputs to both stdout and stderr
+process p1 "sh -c 'echo Hello_stdout && echo Hello_stderr >&2'" -start
+
+# Wait for process to complete
+process p1 -wait
+
+# Test that the macros are exported and point to valid files
+shell -exit 0 "test -f ${p1_out}"
+shell -exit 0 "test -f ${p1_err}"
+
+# Test that the files contain the expected output
+shell -match "Hello_stdout" "cat ${p1_out}"
+shell -match "Hello_stderr" "cat ${p1_err}"
+
+# Test line counting
+shell -match "1" "wc -l < ${p1_out} | tr -d ' '"
+shell -match "1" "wc -l < ${p1_err} | tr -d ' '"
