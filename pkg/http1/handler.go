@@ -5,16 +5,24 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/perbu/GTest/pkg/vtc"
 )
 
 // Handler processes HTTP command specifications
 type Handler struct {
-	HTTP *HTTP
+	HTTP    *HTTP
+	Context interface{} // ExecContext for global commands (optional)
 }
 
 // NewHandler creates a new HTTP command handler
 func NewHandler(h *HTTP) *Handler {
 	return &Handler{HTTP: h}
+}
+
+// SetContext sets the execution context for global command support
+func (h *Handler) SetContext(ctx interface{}) {
+	h.Context = ctx
 }
 
 // ProcessSpec processes an HTTP command specification string
@@ -97,7 +105,11 @@ func (h *Handler) ProcessCommand(cmdLine string) error {
 		h.HTTP.Logger.Debug("Executing delay")
 		err = h.handleDelay(args)
 	default:
-		err = fmt.Errorf("unknown HTTP command: %s", cmd)
+		// Try to execute as a global VTC command
+		err = h.tryGlobalCommand(cmd, args)
+		if err != nil {
+			err = fmt.Errorf("unknown HTTP command: %s", cmd)
+		}
 	}
 
 	if err != nil {
@@ -107,6 +119,24 @@ func (h *Handler) ProcessCommand(cmdLine string) error {
 	}
 
 	return err
+}
+
+// tryGlobalCommand attempts to execute a command as a global VTC command
+func (h *Handler) tryGlobalCommand(cmd string, args []string) error {
+	if h.Context == nil {
+		return fmt.Errorf("no context available for global commands")
+	}
+
+	// Try to execute as a global VTC command (barrier, shell, delay, etc.)
+	h.HTTP.Logger.Debug("Attempting to execute '%s' as global VTC command", cmd)
+	err := vtc.ExecuteCommand(cmd, args, h.Context, h.HTTP.Logger)
+	if err != nil {
+		h.HTTP.Logger.Debug("Global command '%s' failed: %v", cmd, err)
+		return err
+	}
+
+	h.HTTP.Logger.Debug("Global command '%s' executed successfully", cmd)
+	return nil
 }
 
 // handleTxReq processes txreq command
