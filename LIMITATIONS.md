@@ -10,7 +10,7 @@ GVTest is a port of VTest2 from C to Go, prioritizing core functionality and mai
 
 ## 1. Terminal Emulation (Teken)
 
-**Status**: Not implemented (Phase 5)
+**Status**: ✅ Implemented (2025-11-17)
 
 **Impact**: High for terminal-based tests, Low for HTTP tests
 
@@ -21,7 +21,7 @@ The original C implementation includes Teken, a VT100-compatible terminal emulat
 - Maintaining a screen buffer with cursor position tracking
 - Supporting commands like `-expect-text ROW COL "text"` and `-screen_dump`
 
-GVTest currently implements basic process I/O with simple text matching but does NOT emulate a terminal.
+GVTest now implements terminal emulation using Go libraries `creack/pty` for PTY allocation and `hinshun/vt10x` for VT100/ANSI emulation.
 
 ### What Works
 
@@ -30,41 +30,69 @@ GVTest currently implements basic process I/O with simple text matching but does
 ✅ Reading stdout/stderr
 ✅ Simple text matching (substring search in output)
 ✅ Exit code checking
+✅ Terminal emulation with PTY allocation
+✅ `-ansi-response` flag (enables terminal emulation)
+✅ `-expect-text ROW COL "text"` (position-aware checking)
+✅ `-screen_dump` (dumping terminal screen buffer)
+✅ ANSI escape sequence processing
+✅ Cursor position tracking
+✅ Terminal resizing with `-resize ROWS COLS`
+✅ PTY path export via `${pNAME_pty}` macro
 
-### What Doesn't Work
+### What Doesn't Work (Yet)
 
-❌ Terminal emulation with PTY allocation
-❌ `-ansi-response` flag (parsed but ignored)
-❌ `-expect-text ROW COL "text"` (position-aware checking)
-❌ `-screen_dump` (dumping terminal screen buffer)
-❌ ANSI escape sequence processing
-❌ Cursor position tracking
-❌ Terminal resizing with `-resize`
+❌ `-match-text ROW COL "pattern"` (regex-based text matching)
+❌ `-run` flag for process spec blocks
+❌ Some advanced VT100 sequences may not be fully supported
+
+### Implementation Details
+
+Terminal emulation is implemented using:
+- **PTY allocation**: `github.com/creack/pty v1.1.21`
+- **VT10X emulation**: `github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02`
+- **Architecture**: Hybrid approach with PTY + VT emulator + custom command layer
+
+The implementation includes:
+- `pkg/process/terminal.go` - Terminal emulator wrapper
+- Integration with `pkg/process/process.go` - Process management
+- Command handlers in `pkg/vtc/builtin_commands.go` - VTC command support
+
+### Usage Example
+
+```vtc
+vtest "Terminal emulation example"
+
+# Start process with terminal emulation
+process p1 {echo Hello} -ansi-response -start
+
+# Check text at specific position (0-indexed)
+process p1 -expect-text 0 0 "Hello"
+
+# Dump the screen buffer for debugging
+process p1 -screen_dump
+
+# Wait for process to complete
+process p1 -wait
+```
 
 ### Affected Tests
 
-Tests that require terminal emulation will fail or skip:
-- `tests/a00001.vtc` - Comprehensive VT100 test with `vttest`
-- Any test using `-expect-text` with row/column coordinates
-- Tests verifying cursor movement or screen layout
+Tests that now work with terminal emulation:
+- ✅ Basic terminal I/O tests
+- ✅ Position-aware text checking
+- ✅ Screen buffer inspection
+- ⚠️ `tests/terminal/a00001.vtc` - Requires `vttest` program
+- ⚠️ `tests/terminal/a00009.vtc` - Requires `-match-text` implementation
+- ⚠️ Other tests in `tests/terminal/` may require additional features
 
-### Workaround
+### Platform Support
 
-For simple text checking without position awareness:
-```vtc
-# Instead of:
-process p1 -expect-text 10 20 "Hello"
+- **Linux**: ✅ Fully supported and tested
+- **macOS**: ⚠️ Should work (uses same PTY API)
+- **Windows**: ❌ Not supported (requires ConPTY, different API)
 
-# Use (in shell command):
-shell -match "Hello" "grep -q Hello ${p1_out}"
-```
-
-### Future Work
-
-See `TERMINAL_EMULATION_SPEC.md` for implementation plan. This is targeted for Phase 6 or later.
-
-**Estimated effort**: 8-14 hours
-**Priority**: Medium (~10% of test suite affected)
+**Completed effort**: ~10 hours
+**Status**: Core functionality complete, advanced features may be added later
 
 ---
 
@@ -617,7 +645,7 @@ These fixes brought the pass rate from 10/48 to 11/48 tests.
 
 | Limitation | Impact | Workaround Available? | Status |
 |------------|--------|----------------------|--------|
-| Terminal emulation | High (for terminal tests) | Partial | 8-14 hours |
+| ~~Terminal emulation~~ | ✅ **Implemented** | N/A | ~~8-14 hours~~ |
 | Gzip support | Medium (6+ tests) | None | 4-6 hours |
 | HTTP/2 streams | High (25+ tests) | Use HTTP/1 | 8-12 hours |
 | Barrier sync bugs | Low (1 test) | Simplify test | 2-4 hours |
@@ -627,18 +655,19 @@ These fixes brought the pass rate from 10/48 to 11/48 tests.
 | Process output macros | Low | Yes (temp files) | 1-2 hours |
 | ~~Spec block execution~~ | ✅ **Implemented** | N/A | ~~2-4 hours~~ |
 
-**Total technical debt**: ~31-56 hours of development (reduced from ~35-60 hours)
+**Total technical debt**: ~21-42 hours of development (reduced from ~31-56 hours)
 
 ---
 
-**Document Version**: 1.2
+**Document Version**: 1.3
 **Last Updated**: 2025-11-17
 **Changes**:
+- v1.3: Implemented terminal emulation (Section 1)
 - v1.2: Implemented group checking for Linux (Section 2)
 - v1.1: Added VTC test compatibility status (Section 7)
 - v1.0: Initial version
 
 **Related Documents**:
-- `TERMINAL_EMULATION_SPEC.md` - Terminal emulation implementation plan
+- `TERMINAL_EMULATION_SPEC.md` - Terminal emulation implementation specification
 - `PHASE5_COMPLETE.md` - Phase 5 completion report
 - `PORT.md` - Overall porting plan
