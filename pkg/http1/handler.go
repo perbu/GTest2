@@ -5,16 +5,24 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/perbu/GTest/pkg/vtc"
 )
 
 // Handler processes HTTP command specifications
 type Handler struct {
-	HTTP *HTTP
+	HTTP    *HTTP
+	Context interface{} // ExecContext for global commands (optional)
 }
 
 // NewHandler creates a new HTTP command handler
 func NewHandler(h *HTTP) *Handler {
 	return &Handler{HTTP: h}
+}
+
+// SetContext sets the execution context for global command support
+func (h *Handler) SetContext(ctx interface{}) {
+	h.Context = ctx
 }
 
 // ProcessSpec processes an HTTP command specification string
@@ -97,7 +105,11 @@ func (h *Handler) ProcessCommand(cmdLine string) error {
 		h.HTTP.Logger.Debug("Executing delay")
 		err = h.handleDelay(args)
 	default:
-		err = fmt.Errorf("unknown HTTP command: %s", cmd)
+		// Try to execute as a global VTC command
+		err = h.tryGlobalCommand(cmd, args)
+		if err != nil {
+			err = fmt.Errorf("unknown HTTP command: %s", cmd)
+		}
 	}
 
 	if err != nil {
@@ -107,6 +119,24 @@ func (h *Handler) ProcessCommand(cmdLine string) error {
 	}
 
 	return err
+}
+
+// tryGlobalCommand attempts to execute a command as a global VTC command
+func (h *Handler) tryGlobalCommand(cmd string, args []string) error {
+	if h.Context == nil {
+		return fmt.Errorf("no context available for global commands")
+	}
+
+	// Try to execute as a global VTC command (barrier, shell, delay, etc.)
+	h.HTTP.Logger.Debug("Attempting to execute '%s' as global VTC command", cmd)
+	err := vtc.ExecuteCommand(cmd, args, h.Context, h.HTTP.Logger)
+	if err != nil {
+		h.HTTP.Logger.Debug("Global command '%s' failed: %v", cmd, err)
+		return err
+	}
+
+	h.HTTP.Logger.Debug("Global command '%s' executed successfully", cmd)
+	return nil
 }
 
 // handleTxReq processes txreq command
@@ -168,6 +198,13 @@ func (h *Handler) handleTxReq(args []string) error {
 			opts.Chunked = true
 		case "-gzip":
 			opts.Gzip = true
+		case "-gzipbody":
+			if i+1 >= len(args) {
+				return fmt.Errorf("-gzipbody requires an argument")
+			}
+			opts.Body = []byte(args[i+1])
+			opts.Gzip = true
+			i++
 		case "-nohost":
 			opts.NoHost = true
 		case "-nouseragent":
@@ -243,6 +280,26 @@ func (h *Handler) handleTxResp(args []string) error {
 			opts.Chunked = true
 		case "-gzip":
 			opts.Gzip = true
+		case "-gzipbody":
+			if i+1 >= len(args) {
+				return fmt.Errorf("-gzipbody requires an argument")
+			}
+			opts.Body = []byte(args[i+1])
+			opts.Gzip = true
+			i++
+		case "-gziplevel":
+			if i+1 >= len(args) {
+				return fmt.Errorf("-gziplevel requires an argument")
+			}
+			n, err := strconv.Atoi(args[i+1])
+			if err != nil {
+				return fmt.Errorf("invalid -gziplevel: %w", err)
+			}
+			if n < 0 || n > 9 {
+				return fmt.Errorf("-gziplevel must be between 0 and 9")
+			}
+			h.HTTP.GzipLevel = n
+			i++
 		case "-nolen":
 			opts.NoLen = true
 		case "-noserver":

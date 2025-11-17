@@ -193,6 +193,13 @@ func (h *HTTP) CompressBody(data []byte) ([]byte, error) {
 		}
 	}
 
+	// Set minimal header to match C zlib implementation
+	// This reduces header size and matches VTest2 behavior
+	w.Header.Name = ""
+	w.Header.Comment = ""
+	w.Header.ModTime = time.Time{} // Zero time
+	w.Header.OS = 0xFF              // Unknown OS
+
 	_, err = w.Write(data)
 	if err != nil {
 		w.Close()

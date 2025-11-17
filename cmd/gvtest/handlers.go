@@ -80,21 +80,23 @@ func nodeToSpecWithDelim(children []*vtc.Node, delim string) string {
 }
 
 // createHTTP1ProcessFunc creates a processFunc for HTTP/1 server connections
-func createHTTP1ProcessFunc(spec string) server.ProcessFunc {
+func createHTTP1ProcessFunc(spec string, ctx *vtc.ExecContext) server.ProcessFunc {
 	return func(conn net.Conn, specStr string, listenAddr string) error {
 		logger := logging.NewLogger("http")
 		h := http1.New(conn, logger)
 		handler := http1.NewHandler(h)
+		handler.SetContext(ctx)
 		return handler.ProcessSpec(spec)
 	}
 }
 
 // createHTTP1ClientProcessFunc creates a processFunc for HTTP/1 client connections
-func createHTTP1ClientProcessFunc(spec string) client.ProcessFunc {
+func createHTTP1ClientProcessFunc(spec string, ctx *vtc.ExecContext) client.ProcessFunc {
 	return func(conn net.Conn, specStr string) error {
 		logger := logging.NewLogger("http")
 		h := http1.New(conn, logger)
 		handler := http1.NewHandler(h)
+		handler.SetContext(ctx)
 		return handler.ProcessSpec(spec)
 	}
 }
@@ -222,7 +224,7 @@ func cmdClient(args []string, priv interface{}, logger *logging.Logger) error {
 				processFunc = createHTTP2ClientProcessFunc(c.Spec)
 			} else {
 				logger.Debug("Client %s: using HTTP/1 handler", clientName)
-				processFunc = createHTTP1ClientProcessFunc(c.Spec)
+				processFunc = createHTTP1ClientProcessFunc(c.Spec, ctx)
 			}
 			err := c.Start(processFunc)
 			if err != nil {
@@ -246,7 +248,7 @@ func cmdClient(args []string, priv interface{}, logger *logging.Logger) error {
 				processFunc = createHTTP2ClientProcessFunc(c.Spec)
 			} else {
 				logger.Debug("Client %s: using HTTP/1 handler", clientName)
-				processFunc = createHTTP1ClientProcessFunc(c.Spec)
+				processFunc = createHTTP1ClientProcessFunc(c.Spec, ctx)
 			}
 			err := c.Run(processFunc)
 			if err != nil {
@@ -377,7 +379,7 @@ func cmdServer(args []string, priv interface{}, logger *logging.Logger) error {
 				processFunc = createHTTP2ProcessFunc(s.Spec)
 			} else {
 				logger.Debug("Server %s: using HTTP/1 handler", serverName)
-				processFunc = createHTTP1ProcessFunc(s.Spec)
+				processFunc = createHTTP1ProcessFunc(s.Spec, ctx)
 			}
 			err := s.Start(processFunc)
 			if err != nil {
@@ -415,7 +417,7 @@ func cmdServer(args []string, priv interface{}, logger *logging.Logger) error {
 				processFunc = createHTTP2ProcessFunc(s.Spec)
 			} else {
 				logger.Debug("Server %s: using HTTP/1 handler for dispatch", serverName)
-				processFunc = createHTTP1ProcessFunc(s.Spec)
+				processFunc = createHTTP1ProcessFunc(s.Spec, ctx)
 			}
 			err := s.Start(processFunc)
 			if err != nil {
