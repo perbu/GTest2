@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/perbu/GTest/pkg/logging"
@@ -30,6 +31,14 @@ const (
 	exitSkip      = 77
 	exitError     = 2
 )
+
+// testResult holds the result of running a single test
+type testResult struct {
+	testFile string
+	exitCode int
+	output   string
+	err      error
+}
 
 func init() {
 	// Register all built-in commands
@@ -55,16 +64,149 @@ func main() {
 	// Set up logging verbosity based on flags
 	logging.SetVerbose(*verbose)
 
-	// Process each test file
+	// Determine if parallel execution is needed
+	var exitCode int
+	if *jobs <= 1 {
+		// Sequential execution
+		exitCode = runTestsSequential(args)
+	} else {
+		// Parallel execution
+		exitCode = runTestsParallel(args, *jobs)
+	}
+
+	os.Exit(exitCode)
+}
+
+// runTestsSequential runs tests sequentially (original behavior)
+func runTestsSequential(testFiles []string) int {
 	exitCode := exitPass
-	for _, testFile := range args {
+	for _, testFile := range testFiles {
 		result := runTest(testFile)
 		if result != exitPass {
 			exitCode = result
 		}
 	}
+	return exitCode
+}
 
-	os.Exit(exitCode)
+// runTestsParallel runs tests in parallel using a worker pool
+func runTestsParallel(testFiles []string, numWorkers int) int {
+	// Create channels for work distribution and result collection
+	testChan := make(chan string, len(testFiles))
+	resultChan := make(chan testResult, len(testFiles))
+
+	// Start worker pool
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go testWorker(testChan, resultChan, &wg)
+	}
+
+	// Send test files to workers
+	for _, testFile := range testFiles {
+		testChan <- testFile
+	}
+	close(testChan)
+
+	// Wait for all workers to complete
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// Collect and display results
+	exitCode := exitPass
+	var mu sync.Mutex
+	for result := range resultChan {
+		mu.Lock()
+		displayTestResult(result)
+
+		// Update exit code with priority: error > fail > skip > pass
+		if result.exitCode == exitError {
+			exitCode = exitError
+		} else if result.exitCode == exitFail && exitCode != exitError {
+			exitCode = exitFail
+		} else if result.exitCode == exitSkip && exitCode == exitPass {
+			exitCode = exitSkip
+		}
+		mu.Unlock()
+	}
+
+	return exitCode
+}
+
+// testWorker processes test files from the channel
+func testWorker(testChan <-chan string, resultChan chan<- testResult, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	for testFile := range testChan {
+		result := runTestCapture(testFile)
+		resultChan <- result
+	}
+}
+
+// runTestCapture runs a test and captures its output
+func runTestCapture(testFile string) testResult {
+	// Create logger
+	testName := filepath.Base(testFile)
+	logger := logging.NewLogger(testName)
+
+	// Reset output before each test
+	logging.ResetOutput()
+
+	// Create macro store with default macros
+	macros := vtc.NewMacroStore()
+	vtc.SetupDefaultMacros(macros, testFile)
+
+	// Run the test
+	timeout := time.Duration(*timeoutSec) * time.Second
+	code, err := vtc.RunTest(testFile, logger, macros, *keepTmp, timeout)
+
+	// Capture log output
+	logOutput := logging.GetOutput()
+
+	return testResult{
+		testFile: testFile,
+		exitCode: code,
+		output:   logOutput,
+		err:      err,
+	}
+}
+
+// displayTestResult outputs the result of a test
+func displayTestResult(result testResult) {
+	testName := filepath.Base(result.testFile)
+
+	switch result.exitCode {
+	case exitPass:
+		if !*quiet {
+			fmt.Printf("✓ %s\n", testName)
+		}
+		if *verbose && result.output != "" {
+			fmt.Print(result.output)
+		}
+	case exitSkip:
+		if !*quiet {
+			fmt.Printf("⊘ %s (skipped)\n", testName)
+		}
+		if *verbose && result.output != "" {
+			fmt.Print(result.output)
+		}
+	case exitFail:
+		if !*quiet {
+			fmt.Printf("✗ %s\n", testName)
+		}
+		if !*quiet && result.output != "" {
+			fmt.Print(result.output)
+		}
+	case exitError:
+		if !*quiet {
+			fmt.Printf("✗ %s (error)\n", testName)
+		}
+		if !*quiet && result.output != "" {
+			fmt.Print(result.output)
+		}
+	}
 }
 
 func runTest(testFile string) int {
