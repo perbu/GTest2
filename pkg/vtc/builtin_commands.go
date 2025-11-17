@@ -26,6 +26,7 @@ func RegisterBuiltinCommands() {
 	RegisterCommand("filewrite", cmdFilewrite, FlagNone)
 	RegisterCommand("process", cmdProcess, FlagNone)
 	RegisterCommand("vtest", cmdVtest, FlagNone)
+	// Note: server and client commands are registered in cmd/gvtest/handlers.go
 }
 
 // hasIPv4 checks if IPv4 connectivity is available
