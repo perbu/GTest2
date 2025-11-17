@@ -2,8 +2,8 @@ vtest "test vtc gzip support"
 
 server s1 {
 	rxreq
-	expect req.http.content-length == "26"
-	expect req.bodylen == "26"
+	expect req.http.content-length == "27"
+	expect req.bodylen == "27"
 	gunzip
 	expect req.bodylen == "3"
 	expect req.http.content-encoding == "gzip"
@@ -13,8 +13,8 @@ server s1 {
 client c1 -connect ${s1_sock} {
 	txreq -gzipbody FOO
 	rxresp
-	expect resp.http.content-length == "26"
-	expect resp.bodylen == "26"
+	expect resp.http.content-length == "27"
+	expect resp.bodylen == "27"
 	gunzip
 	expect resp.bodylen == "3"
 	expect resp.http.content-encoding == "gzip"

@@ -1095,7 +1095,17 @@ func TestRxReq_GzipBody(t *testing.T) {
 		t.Fatalf("RxReq failed: %v", err)
 	}
 
-	// Body should be decompressed automatically
+	// Body should be compressed, need to manually decompress with Gunzip
+	if len(h2.Body) != len(compressedBody) {
+		t.Errorf("Expected compressed body length %d, got %d", len(compressedBody), len(h2.Body))
+	}
+
+	// Manually decompress
+	err = h2.Gunzip()
+	if err != nil {
+		t.Fatalf("Gunzip failed: %v", err)
+	}
+
 	if string(h2.Body) != string(originalBody) {
 		t.Errorf("Expected decompressed body '%s', got '%s'", string(originalBody), string(h2.Body))
 	}
@@ -1128,7 +1138,17 @@ func TestRxResp_GzipBody(t *testing.T) {
 		t.Fatalf("RxResp failed: %v", err)
 	}
 
-	// Body should be decompressed automatically
+	// Body should be compressed, need to manually decompress with Gunzip
+	if len(h2.Body) != len(compressedBody) {
+		t.Errorf("Expected compressed body length %d, got %d", len(compressedBody), len(h2.Body))
+	}
+
+	// Manually decompress
+	err = h2.Gunzip()
+	if err != nil {
+		t.Fatalf("Gunzip failed: %v", err)
+	}
+
 	if string(h2.Body) != string(originalBody) {
 		t.Errorf("Expected decompressed body '%s', got '%s'", string(originalBody), string(h2.Body))
 	}
