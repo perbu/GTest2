@@ -466,11 +466,15 @@ Implementation:
 
 ### 6.1 Spec Block Execution in Executor
 
-**Status**: Parser supports, executor doesn't dispatch
+**Status**: ✅ Implemented (2025-11-17)
 
-**Impact**: Medium (HTTP tests don't run through executor)
+**Impact**: None - HTTP tests now run through executor
 
-See `PHASE5_COMPLETE.md` section "Critical Doubts #2" for details.
+Spec blocks for server and client commands are now properly parsed and executed. The implementation is in `cmd/gvtest/handlers.go` with command handlers that:
+- Extract spec blocks from AST nodes
+- Create appropriate HTTP/1 or HTTP/2 handlers
+- Process spec commands through the handler's ProcessSpec method
+- Support all server/client options (-start, -run, -wait, -listen, -connect, session options, etc.)
 
 ### 6.2 Command Coverage
 
@@ -646,9 +650,9 @@ These fixes brought the pass rate from 10/48 to 11/48 tests.
 | Platform detection | Medium (non-Linux) | Yes (manual checks) | 4-8 hours |
 | Parallel execution | Medium (performance) | Yes (GNU parallel) | 3-5 hours |
 | Process output macros | Low | Yes (temp files) | 1-2 hours |
-| Spec block execution | Medium | N/A (core feature) | 2-4 hours |
+| ~~Spec block execution~~ | ✅ **Implemented** | N/A | ~~2-4 hours~~ |
 
-**Total technical debt**: ~35-60 hours of development
+**Total technical debt**: ~33-56 hours of development (reduced from ~35-60 hours)
 
 ---
 

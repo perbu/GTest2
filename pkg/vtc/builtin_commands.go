@@ -25,6 +25,7 @@ func RegisterBuiltinCommands() {
 	RegisterCommand("filewrite", cmdFilewrite, FlagNone)
 	RegisterCommand("process", cmdProcess, FlagNone)
 	RegisterCommand("vtest", cmdVtest, FlagNone)
+	// Note: server and client commands are registered in cmd/gvtest/handlers.go
 }
 
 // cmdVtest handles the "vtest" command
