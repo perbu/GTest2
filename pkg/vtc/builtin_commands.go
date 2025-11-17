@@ -3,6 +3,7 @@ package vtc
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +26,30 @@ func RegisterBuiltinCommands() {
 	RegisterCommand("filewrite", cmdFilewrite, FlagNone)
 	RegisterCommand("process", cmdProcess, FlagNone)
 	RegisterCommand("vtest", cmdVtest, FlagNone)
+}
+
+// hasIPv4 checks if IPv4 connectivity is available
+func hasIPv4() bool {
+	// Try to dial a well-known IPv4 address (Google Public DNS)
+	// This doesn't actually send data, just verifies we can create an IPv4 connection
+	conn, err := net.Dial("udp4", "8.8.8.8:53")
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+// hasIPv6 checks if IPv6 connectivity is available
+func hasIPv6() bool {
+	// Try to dial a well-known IPv6 address (Google Public DNS)
+	// This doesn't actually send data, just verifies we can create an IPv6 connection
+	conn, err := net.Dial("udp6", "[2001:4860:4860::8888]:53")
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
 }
 
 // cmdVtest handles the "vtest" command
@@ -311,6 +336,22 @@ func cmdFeature(args []string, priv interface{}, logger *logging.Logger) error {
 		case "dns":
 			// Check if DNS resolution works
 			logger.Debug("feature: dns check - assuming available")
+
+		case "ipv4":
+			// Check if IPv4 connectivity is available
+			if !hasIPv4() {
+				ctx.Skip("IPv4 not available")
+				return nil
+			}
+			logger.Debug("feature: IPv4 is available")
+
+		case "ipv6":
+			// Check if IPv6 connectivity is available
+			if !hasIPv6() {
+				ctx.Skip("IPv6 not available")
+				return nil
+			}
+			logger.Debug("feature: IPv6 is available")
 
 		default:
 			return fmt.Errorf("feature: unknown feature check: %s", args[i])

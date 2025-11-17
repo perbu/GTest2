@@ -210,6 +210,8 @@ The original VTest2 performs extensive platform and feature detection to skip te
 ✅ `feature cmd COMMAND` - Check if command exists in PATH
 ✅ `feature user USERNAME` - Check if running as specific user (basic)
 ✅ `feature dns` - Assumed true (skips DNS check)
+✅ `feature ipv4` - IPv4 availability detection
+✅ `feature ipv6` - IPv6 availability detection
 
 ### Partially Implemented
 
@@ -230,8 +232,6 @@ case "SO_RCVTIMEO_WORKS":
 
 ### Not Implemented
 
-❌ `feature ipv4` - IPv4 availability
-❌ `feature ipv6` - IPv6 availability
 ❌ `feature persistent_storage` - Filesystem supports persistent storage
 ❌ `feature 64bit` - 64-bit architecture check
 ❌ `feature topbuild` - Running from build directory
@@ -264,7 +264,8 @@ case "SO_RCVTIMEO_WORKS":
 
 | Feature | Assumption | Reality Check |
 |---------|------------|---------------|
-| IPv4 | Always available | Usually true |
+| IPv4 | Detected via network dial | Properly checked |
+| IPv6 | Detected via network dial | Properly checked |
 | DNS | Always works | Usually true |
 | SO_RCVTIMEO | Works on Linux | True on modern Linux |
 | Unix sockets | Always work | True on Unix, false on Windows |
@@ -275,7 +276,7 @@ case "SO_RCVTIMEO_WORKS":
 
 To improve platform detection:
 
-1. **IPv4/IPv6 detection**:
+1. **IPv4/IPv6 detection** ✅ **IMPLEMENTED**:
    ```go
    func hasIPv4() bool {
        conn, err := net.Dial("udp4", "8.8.8.8:53")
@@ -295,6 +296,7 @@ To improve platform detection:
        return true
    }
    ```
+   These functions are now implemented in `pkg/vtc/builtin_commands.go` and integrated with the `feature` command.
 
 2. **Socket option testing**:
    ```go
@@ -357,10 +359,10 @@ If tests fail due to platform assumptions:
 ### Future Work
 
 **Priority**: Medium (important for cross-platform support)
-**Estimated effort**: 4-8 hours
+**Estimated effort**: 4-8 hours (2 hours completed)
 
 Implementation checklist:
-- [ ] Add IPv4/IPv6 detection
+- [x] Add IPv4/IPv6 detection (completed 2025-11-17)
 - [ ] Add proper SO_RCVTIMEO testing
 - [ ] Add architecture detection
 - [ ] Create platform detection cache
