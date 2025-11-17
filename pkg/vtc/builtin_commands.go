@@ -67,10 +67,13 @@ func cmdBarrier(args []string, priv interface{}, logger *logging.Logger) error {
 	// Parse options
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
-		case "cond":
+		case "cond", "sock":
 			// VTest2 syntax: barrier <name> cond <count> [-cyclic]
+			// or: barrier <name> sock <count> [-cyclic]
+			// In VTest2, "sock" uses socket-based barriers for inter-process sync
+			// In GTest, we treat sock and cond identically since we run in one process
 			if i+1 >= len(args) {
-				return fmt.Errorf("barrier: cond requires a count")
+				return fmt.Errorf("barrier: %s requires a count", args[i])
 			}
 			i++
 			count, err := strconv.Atoi(args[i])
