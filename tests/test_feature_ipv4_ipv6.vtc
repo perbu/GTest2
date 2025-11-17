@@ -1,0 +1,26 @@
+vtest "IPv4 and IPv6 feature detection"
+
+# Test that IPv4 detection works
+# Most systems should have IPv4 available
+feature ipv4
+
+# Create a simple HTTP test using IPv4
+server s1 {
+	rxreq
+	expect req.method == GET
+	expect req.url == "/test"
+	txresp -status 200 -body "OK"
+} -start
+
+client c1 -connect ${s1_sock} {
+	txreq -url /test
+	rxresp
+	expect resp.status == 200
+	expect resp.body == "OK"
+} -run
+
+server s1 -wait
+
+# Note: IPv6 test would be similar but may not be available on all systems
+# Uncomment this to test IPv6 if your system supports it:
+# feature ipv6
