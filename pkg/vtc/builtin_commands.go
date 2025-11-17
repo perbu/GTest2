@@ -191,6 +191,12 @@ func cmdShell(args []string, priv interface{}, logger *logging.Logger) error {
 		return fmt.Errorf("shell: no command specified")
 	}
 
+	// Expand macros in the shell command
+	shellCmd, err := ctx.Macros.Expand(logger, shellCmd)
+	if err != nil {
+		return fmt.Errorf("shell: macro expansion failed: %w", err)
+	}
+
 	// Execute the command
 	logger.Debug("Executing shell command: %s", shellCmd)
 	cmd := exec.Command("sh", "-c", shellCmd)
@@ -417,25 +423,66 @@ func cmdProcess(args []string, priv interface{}, logger *logging.Logger) error {
 		p = existing.(*process.Process)
 	}
 
+	// Check if the first arg is a command string (not a flag)
+	var cmdStr string
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		cmdStr = args[0]
+		args = args[1:]
+	}
+
 	// Parse options
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "-start":
-			if i+1 >= len(args) {
-				return fmt.Errorf("process: -start requires a command")
+			// Check if command was provided before -start
+			if cmdStr == "" {
+				// Check if command is provided after -start
+				if i+1 >= len(args) {
+					return fmt.Errorf("process: -start requires a command")
+				}
+				i++
+				cmdStr = args[i]
 			}
-			i++
-			cmdStr := args[i]
 
-			// Parse command and arguments
-			cmdParts := strings.Fields(cmdStr)
-			if len(cmdParts) == 0 {
+			// Check if command string is empty
+			if cmdStr == "" {
 				return fmt.Errorf("process: empty command")
 			}
 
-			p = process.New(procName, logger, cmdParts[0], cmdParts[1:]...)
+			// For complex commands with shell syntax, wrap in sh -c
+			// Simple heuristic: if it contains shell metacharacters, use sh -c
+			needsShell := strings.ContainsAny(cmdStr, "|&;<>()$`\\\"'*?[]!{}~")
+
+			var cmdParts []string
+			if needsShell {
+				cmdParts = []string{"sh", "-c", cmdStr}
+			} else {
+				// Simple command without shell syntax - split by whitespace
+				cmdParts = strings.Fields(cmdStr)
+				if len(cmdParts) == 0 {
+					return fmt.Errorf("process: empty command")
+				}
+			}
+
+			p = process.New(procName, logger, ctx.TmpDir, cmdParts[0], cmdParts[1:]...)
 			ctx.Processes[procName] = p
-			return p.Start()
+
+			// Start the process
+			if err := p.Start(); err != nil {
+				return err
+			}
+
+			// Export macros for stdout and stderr file paths
+			if p.StdoutPath != "" {
+				ctx.Macros.Define(procName+"_out", p.StdoutPath)
+				logger.Debug("Exported macro ${%s_out} = %s", procName, p.StdoutPath)
+			}
+			if p.StderrPath != "" {
+				ctx.Macros.Define(procName+"_err", p.StderrPath)
+				logger.Debug("Exported macro ${%s_err} = %s", procName, p.StderrPath)
+			}
+
+			return nil
 
 		case "-wait":
 			if p == nil {
