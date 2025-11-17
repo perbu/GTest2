@@ -347,9 +347,9 @@ Implementation checklist:
 
 ## 4. Parallel Test Execution
 
-**Status**: Not implemented (Phase 5)
+**Status**: ✅ Implemented (2025-11-17)
 
-**Impact**: Medium (test suite runs slower)
+**Impact**: None - feature fully implemented
 
 ### Description
 
@@ -358,47 +358,50 @@ The original VTest2 supports running multiple tests in parallel with the `-j` fl
 vtest -j 4 tests/*.vtc   # Run 4 tests concurrently
 ```
 
-GVTest **parses** the `-j` flag but **ignores** it - all tests run sequentially.
+GVTest now **fully supports** parallel test execution with the `-j` flag.
 
-### Current Behavior
+### Current Implementation
 
 ```bash
 gvtest -j 4 test1.vtc test2.vtc test3.vtc
-# Actually runs: test1 → test2 → test3 (sequential)
+# Runs up to 4 tests concurrently using worker pool pattern
 ```
 
-### Why Not Implemented
+### Implementation Details
 
-1. **Complexity**: Requires goroutine pool, result aggregation, synchronized output
-2. **Phase scope**: Deferred to Phase 6 to keep Phase 5 focused
-3. **Correctness first**: Ensure single-threaded execution works correctly first
+Implemented in commit 6ca71d0 with the following features:
 
-### Impact
+- **Worker pool pattern**: Creates j worker goroutines that process tests from a queue
+- **Thread-safe output**: Uses mutex to prevent interleaved test results
+- **Exit code aggregation**: Properly prioritizes error > fail > skip > pass
+- **Backward compatible**: Default `-j 1` runs tests sequentially as before
+- **Verbose mode support**: Logs properly synchronized when using `-v` flag
 
-- **Slower test runs**: O(n) instead of O(n/j) for n tests
-- **No impact on correctness**: All tests still run, just sequentially
+### Performance Impact
 
-### Workaround
+- **Faster test runs**: O(n/j) instead of O(n) for n tests with j workers
+- **No correctness impact**: All tests run independently as designed
 
-Use GNU parallel or xargs:
+### Usage
+
 ```bash
-find tests -name "*.vtc" | xargs -n 1 -P 4 gvtest
+# Sequential (default)
+gvtest test1.vtc test2.vtc
+
+# Run 4 tests concurrently
+gvtest -j 4 tests/*.vtc
+
+# Auto-detect CPU count (uses all cores)
+gvtest -j 0 tests/*.vtc
 ```
-
-### Future Work
-
-**Priority**: Medium
-**Estimated effort**: 3-5 hours
-
-See `PHASE5_COMPLETE.md` section 6 for implementation notes.
 
 ---
 
 ## 5. Process Output Macros
 
-**Status**: Not implemented (Phase 5)
+**Status**: ✅ Implemented (2025-11-17)
 
-**Impact**: Low (advanced use cases)
+**Impact**: None - feature fully implemented
 
 ### Description
 
@@ -413,27 +416,33 @@ process p1 -wait
 shell "wc -l ${p1_out}"  # Count lines in stdout
 ```
 
-GVTest does not currently export these macros.
+GVTest now **fully supports** these macros.
 
-### Workaround
+### Current Implementation
 
-Capture output in a file explicitly:
+Implemented in commit df33347 with the following features:
+
+- **Temporary file creation**: Creates temp files in test's tmpdir for stdout/stderr
+- **Tee output**: Output is captured to both buffer (for logging) and file (for macros)
+- **Automatic macro export**: Macros `${pNAME_out}` and `${pNAME_err}` exported when process starts
+- **Automatic cleanup**: Output files are cleaned up when process completes
+- **Shell integration**: Macros are expanded before shell command execution
+
+### Usage
+
 ```vtc
-process p1 -start {myprogram}
+# Start a process and capture output
+process p1 "echo Hello" -start
 process p1 -wait
-shell "myprogram > output.txt 2> error.txt"
-shell "wc -l output.txt"
+
+# Reference captured output in shell commands
+shell "cat ${p1_out}"          # Read stdout
+shell "cat ${p1_err}"          # Read stderr
+shell "wc -l ${p1_out}"        # Count lines in stdout
+shell "grep Hello ${p1_out}"   # Search in output
 ```
 
-### Future Work
-
-**Priority**: Low
-**Estimated effort**: 1-2 hours
-
-Implementation:
-- Create temp files for stdout/stderr in tmpdir
-- Tee output to both buffer and file
-- Export macros when process starts
+The implementation creates persistent files that can be referenced multiple times throughout the test.
 
 ---
 
@@ -515,68 +524,99 @@ These tests are preserved for future implementation but excluded from the main t
 
 #### 7.1 Gzip Support
 
-**Status**: Partially implemented
+**Status**: ✅ Implemented (2025-11-17)
 
-The `gunzip` command exists but compression/decompression options are missing:
+All gzip compression/decompression features are now fully implemented:
 
-❌ `txreq -gzipbody DATA` - Send gzip-compressed request body
-❌ `txresp -gzipbody DATA` - Send gzip-compressed response body
-❌ `txresp -gziplevel N` - Set compression level
-✅ `gunzip` - Decompress received body (implemented but untested)
+✅ `txreq -gzipbody DATA` - Send gzip-compressed request body
+✅ `txresp -gzipbody DATA` - Send gzip-compressed response body
+✅ `txresp -gziplevel N` - Set compression level (0-9)
+✅ `gunzip` - Decompress received body
 
-**Affected tests**: `a00011.vtc` (gzip support test), plus ~5 other tests
+**Implementation details** (commit 44f5845):
+- Minimal gzip headers (zero time, no name/comment) to reduce size
+- Support for custom compression levels
+- Manual decompression control via `gunzip` command
+- Compatible with VTC test semantics
 
-**Workaround**: None available for these specific tests
+**Test results**: `a00011.vtc` (gzip support test) now passes
 
-**Implementation effort**: 4-6 hours
+**Note**: Go's compress/gzip produces slightly different compressed sizes than C's zlib (e.g., 27 bytes vs 26 bytes for "FOO"). This is expected and tests have been updated accordingly.
 
 #### 7.2 HTTP/2 Stream Commands
 
-**Status**: Not implemented
+**Status**: ✅ Implemented (2025-11-17)
 
-HTTP/2 tests require the `stream` command for multiplexed stream management:
+HTTP/2 stream commands are now fully implemented for multiplexed stream management:
 
-❌ `stream ID -run` - Run commands on specific HTTP/2 stream
-❌ `stream ID -start` - Start stream in background
-❌ `stream ID -wait` - Wait for stream completion
+✅ `stream ID -run` - Run commands on specific HTTP/2 stream
+✅ `stream ID -start` - Start stream in background
+✅ `stream ID -wait` - Wait for stream completion
 
-**Affected tests**: All `a02xxx.vtc` tests except basic ones
+**Implementation details** (commit ccaa269):
+- Added `pkg/http2/handler.go` with comprehensive HTTP/2 command support
+- ProcessSpec() for executing HTTP/2 command specs
+- ProcessStreamCommand() for stream-specific commands
+- Support for all HTTP/2 frames (SETTINGS, DATA, HEADERS, PRIORITY, RST_STREAM, PING, GOAWAY, WINDOW_UPDATE)
+- Auto-detection of HTTP/2 specs in client/server commands
+- Nested stream blocks with ||| delimiter support
 
-**Impact**: ~25 HTTP/2 tests cannot run
+**Connection-level commands**:
+- txpri, rxpri: HTTP/2 connection preface
+- txsettings, rxsettings: SETTINGS frame handling
+- sendhex: Send raw hex data
 
-**Workaround**: Use HTTP/1 tests to validate basic HTTP functionality
+**Stream-level commands**:
+- txreq, rxreq: HTTP/2 requests with HPACK encoding
+- txresp, rxresp: HTTP/2 responses
+- txdata, rxdata: DATA frames
+- txprio: PRIORITY frames
+- txrst, rxrst: RST_STREAM frames
+- txping, rxping: PING frames
+- txgoaway, rxgoaway: GOAWAY frames
+- txwinup, rxwinup: WINDOW_UPDATE frames
+- rxhdrs: Receive HEADERS frame
+- expect: Assertions on stream data
 
-**Implementation effort**: 8-12 hours (requires HTTP/2 stream state machine)
+**Impact**: Enables ~25 HTTP/2 tests (a02xxx.vtc files) to run
 
 #### 7.3 Barrier Synchronization
 
-**Status**: Basic implementation with issues
+**Status**: ✅ Fixed (2025-11-17)
 
-Barriers work for simple cases but complex multi-barrier scenarios (like `a00013.vtc`) experience deadlocks.
+Barriers now work correctly for all scenarios including complex multi-barrier coordination:
 
 ✅ `barrier NAME sync` - Basic synchronization
 ✅ `barrier NAME sock COUNT` - Socket-based barriers (treated same as cond)
 ✅ `barrier NAME cond COUNT` - Condition variable barriers
 ✅ `barrier NAME -cyclic` - Cyclic barriers
-⚠️ Complex multi-barrier coordination - May deadlock
+✅ Complex multi-barrier coordination - Now works correctly
 
-**Affected tests**: `a00013.vtc` (complex barrier test)
+**Implementation details** (commit 1925ddc):
 
-**Issue**: Likely race condition or incorrect barrier reset logic
+**Root cause**: Barrier commands inside server/client specs were not being executed because the HTTP handler only recognized HTTP-specific commands. When specs contained barrier sync commands, they failed with "unknown HTTP command: barrier", causing tests to hang waiting for barriers that never executed.
 
-**Implementation effort**: 2-4 hours (debugging and fixing sync logic)
+**Solution**:
+- Added Context field to HTTP Handler to store ExecContext
+- Implemented tryGlobalCommand() to fallback to VTC global commands for non-HTTP commands
+- Updated HTTP handler to recognize and execute barrier, shell, delay, and other global commands
+
+**Test results**: `a00013.vtc` (complex multi-barrier test) now passes
+
+**Note**: The barrier Wait implementation's goroutine approach with cycle checking was already correct. The deadlock was caused by barriers never being executed, not by the synchronization logic itself.
 
 #### 7.4 Additional HTTP Commands
 
 Other missing HTTP/1 command options:
 
-❌ `txreq/txresp -gzip` flags
 ❌ `chunkedlen` command
 ❌ `sema` command (semaphores)
 ❌ `logexpect` command
 ❌ Advanced header manipulation
 
-**Affected tests**: Various (~10 tests)
+**Note**: Gzip flags (`-gzipbody`, `-gziplevel`) are now implemented (see Section 7.1)
+
+**Affected tests**: Various (~5 tests)
 
 **Implementation effort**: 1-3 hours per feature
 
@@ -600,16 +640,22 @@ These fixes brought the pass rate from 10/48 to 11/48 tests.
 - Null byte handling in bodies
 
 **Missing coverage**:
-- Compression/decompression workflows
-- HTTP/2 stream multiplexing
-- Complex synchronization scenarios
 - Terminal-based interactive testing
+- Semaphore commands
+- Log expectation commands
+- Chunked transfer encoding length commands
+
+**Implemented features** (2025-11-17):
+✅ Gzip support - compression/decompression workflows
+✅ HTTP/2 stream multiplexing - all stream commands
+✅ Barrier synchronization - complex multi-barrier scenarios fixed
+✅ Parallel test execution - concurrent test runs with -j flag
+✅ Process output macros - ${pNAME_out} and ${pNAME_err}
 
 **Priority for next implementation phase**:
-1. Gzip support (high impact, moderate effort)
-2. Fix barrier synchronization (low effort, fixes 1 test)
-3. HTTP/2 streams (high effort, enables 25+ tests)
-4. Terminal emulation (high effort, enables 10 tests)
+1. Terminal emulation (high effort, enables 10 tests)
+2. Semaphore commands (moderate effort, enables ~3 tests)
+3. Additional HTTP commands (chunkedlen, logexpect, etc.)
 
 ---
 
@@ -618,22 +664,26 @@ These fixes brought the pass rate from 10/48 to 11/48 tests.
 | Limitation | Impact | Workaround Available? | Status |
 |------------|--------|----------------------|--------|
 | Terminal emulation | High (for terminal tests) | Partial | 8-14 hours |
-| Gzip support | Medium (6+ tests) | None | 4-6 hours |
-| HTTP/2 streams | High (25+ tests) | Use HTTP/1 | 8-12 hours |
-| Barrier sync bugs | Low (1 test) | Simplify test | 2-4 hours |
-| Group checking | Low | N/A | ✅ Implemented (Linux) |
-| Platform detection | Medium (non-Linux) | Yes (manual checks) | 4-8 hours |
-| Parallel execution | Medium (performance) | Yes (GNU parallel) | 3-5 hours |
-| Process output macros | Low | Yes (temp files) | 1-2 hours |
+| Semaphore commands | Low (3+ tests) | None | 2-3 hours |
+| Log expectation | Low (advanced tests) | Manual log parsing | 3-5 hours |
+| Chunked encoding commands | Low (few tests) | None | 1-2 hours |
+| ~~Gzip support~~ | ✅ **Implemented** | N/A | ~~4-6 hours~~ |
+| ~~HTTP/2 streams~~ | ✅ **Implemented** | N/A | ~~8-12 hours~~ |
+| ~~Barrier sync bugs~~ | ✅ **Fixed** | N/A | ~~2-4 hours~~ |
+| ~~Group checking~~ | ✅ **Implemented** (Linux) | N/A | ~~Implemented~~ |
+| Platform detection | Medium (non-Linux) | Yes (manual checks) | 2-4 hours remaining |
+| ~~Parallel execution~~ | ✅ **Implemented** | N/A | ~~3-5 hours~~ |
+| ~~Process output macros~~ | ✅ **Implemented** | N/A | ~~1-2 hours~~ |
 | ~~Spec block execution~~ | ✅ **Implemented** | N/A | ~~2-4 hours~~ |
 
-**Total technical debt**: ~31-56 hours of development (reduced from ~35-60 hours)
+**Total technical debt**: ~16-28 hours of development (reduced from ~35-60 hours)
 
 ---
 
-**Document Version**: 1.2
+**Document Version**: 1.3
 **Last Updated**: 2025-11-17
 **Changes**:
+- v1.3: Updated to reflect major implementations: parallel execution, process output macros, gzip support, HTTP/2 streams, and barrier fixes
 - v1.2: Implemented group checking for Linux (Section 2)
 - v1.1: Added VTC test compatibility status (Section 7)
 - v1.0: Initial version
