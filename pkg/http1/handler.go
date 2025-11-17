@@ -168,6 +168,13 @@ func (h *Handler) handleTxReq(args []string) error {
 			opts.Chunked = true
 		case "-gzip":
 			opts.Gzip = true
+		case "-gzipbody":
+			if i+1 >= len(args) {
+				return fmt.Errorf("-gzipbody requires an argument")
+			}
+			opts.Body = []byte(args[i+1])
+			opts.Gzip = true
+			i++
 		case "-nohost":
 			opts.NoHost = true
 		case "-nouseragent":
@@ -243,6 +250,26 @@ func (h *Handler) handleTxResp(args []string) error {
 			opts.Chunked = true
 		case "-gzip":
 			opts.Gzip = true
+		case "-gzipbody":
+			if i+1 >= len(args) {
+				return fmt.Errorf("-gzipbody requires an argument")
+			}
+			opts.Body = []byte(args[i+1])
+			opts.Gzip = true
+			i++
+		case "-gziplevel":
+			if i+1 >= len(args) {
+				return fmt.Errorf("-gziplevel requires an argument")
+			}
+			n, err := strconv.Atoi(args[i+1])
+			if err != nil {
+				return fmt.Errorf("invalid -gziplevel: %w", err)
+			}
+			if n < 0 || n > 9 {
+				return fmt.Errorf("-gziplevel must be between 0 and 9")
+			}
+			h.HTTP.GzipLevel = n
+			i++
 		case "-nolen":
 			opts.NoLen = true
 		case "-noserver":

@@ -126,24 +126,8 @@ func (h *HTTP) readBody(isRequest bool) error {
 		}
 	}
 
-	// Check for gzip encoding and decompress if needed
-	var ce string
-	if isRequest {
-		ce = h.GetRequestHeader("Content-Encoding")
-	} else {
-		ce = h.GetResponseHeader("Content-Encoding")
-	}
-
-	if strings.Contains(strings.ToLower(ce), "gzip") && len(body) > 0 {
-		decompressed, err := h.DecompressBody(body)
-		if err != nil {
-			h.Logger.Log(2, "Warning: gzip decompression failed: %v", err)
-			// Don't fail, just keep the compressed body
-		} else {
-			body = decompressed
-		}
-	}
-
+	// Store the body as-is (don't auto-decompress)
+	// VTC tests expect manual decompression via the 'gunzip' command
 	h.Body = body
 	h.BodyLen = len(body)
 	return nil

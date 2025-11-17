@@ -425,8 +425,15 @@ func TestPhase3_GzipCompression(t *testing.T) {
 		t.Fatalf("RxResp failed: %v", err)
 	}
 
-	// Body should be decompressed automatically
+	// Body should be compressed, need to manually decompress with Gunzip
 	expectedBody := strings.Repeat("This is compressed content. ", 100)
+
+	// Manually decompress
+	err = h.Gunzip()
+	if err != nil {
+		t.Fatalf("Gunzip failed: %v", err)
+	}
+
 	if string(h.Body) != expectedBody {
 		t.Errorf("Expected decompressed body of length %d, got %d", len(expectedBody), len(h.Body))
 	}
