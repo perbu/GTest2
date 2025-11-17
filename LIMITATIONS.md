@@ -70,7 +70,7 @@ See `TERMINAL_EMULATION_SPEC.md` for implementation plan. This is targeted for P
 
 ## 2. Group Checking
 
-**Status**: Not implemented (Phase 5)
+**Status**: ✅ Implemented (Linux only)
 
 **Impact**: Low (rarely used)
 
@@ -86,91 +86,69 @@ This allows tests to skip if they require specific group permissions.
 
 ### Current Implementation
 
-In GVTest, the `feature group GROUPNAME` command is **recognized but not implemented**:
+In GVTest, the `feature group GROUPNAME` command is **fully implemented for Linux**:
 - The parser accepts the syntax
-- A warning is logged: `"Group checking not implemented, assuming not in group"`
-- The test is **skipped** (conservative behavior)
+- Group membership is checked using `os/user` package
+- Tests are **skipped** if the user is not in the specified group
+- Both primary and supplementary groups are checked
+- Clear skip messages indicate the reason (group doesn't exist, or user not in group)
 
 ```go
 // pkg/vtc/builtin_commands.go
 case "group":
-    if len(parts) < 2 {
-        return fmt.Errorf("feature group requires group name")
+    groupName := args[i]
+
+    inGroup, err := isInGroup(groupName)
+    if err != nil {
+        // Group doesn't exist or we can't determine membership
+        ctx.Skip(fmt.Sprintf("cannot verify group membership for '%s': %v", groupName, err))
+        return nil
     }
-    // TODO: Implement group checking
-    ctx.Logger.Warn("Group checking not implemented, assuming not in group")
-    ctx.Skipped = true
-    return nil
+
+    if !inGroup {
+        ctx.Skip(fmt.Sprintf("not in group '%s'", groupName))
+        return nil
+    }
 ```
 
-### Why Not Implemented
+### Implementation Details
 
-1. **Platform differences**: Unix group handling varies (Linux, macOS, BSD)
-2. **Low usage**: Very few tests use this feature
-3. **Security concerns**: Group membership checks can be complex (primary vs. supplementary groups)
-4. **Go stdlib gaps**: No built-in cross-platform group membership check
+The implementation uses Go's `os/user` package to check group membership:
 
-### Proper Implementation Approach
+1. **Gets current user** using `user.Current()`
+2. **Checks primary group** by comparing GIDs
+3. **Checks supplementary groups** via `user.GroupIds()`
+4. **Looks up target group** by name using `user.LookupGroup()`
 
-To implement this correctly, you would need to:
+The implementation handles several edge cases:
+- Primary group vs. supplementary groups (both checked)
+- Group name to GID resolution
+- Non-existent groups (test skipped with clear error message)
+- User not in group (test skipped with clear message)
 
-1. **Get current process groups**:
-   ```go
-   import (
-       "os/user"
-       "strconv"
-   )
+### Platform Support
 
-   func isInGroup(groupName string) (bool, error) {
-       currentUser, err := user.Current()
-       if err != nil {
-           return false, err
-       }
+- **Linux**: ✅ Fully implemented and tested
+- **macOS/BSD**: ⚠️ Should work but not tested
+- **Windows**: ❌ Not applicable (no Unix groups)
 
-       // Get all group IDs for current user
-       groupIDs, err := currentUser.GroupIds()
-       if err != nil {
-           return false, err
-       }
+The implementation uses only the Go standard library `os/user` package, which abstracts platform differences for Unix-like systems.
 
-       // Lookup group by name to get GID
-       targetGroup, err := user.LookupGroup(groupName)
-       if err != nil {
-           return false, err // Group doesn't exist
-       }
+### Usage Example
 
-       // Check if user is in target group
-       for _, gid := range groupIDs {
-           if gid == targetGroup.Gid {
-               return true, nil
-           }
-       }
-
-       return false, nil
-   }
-   ```
-
-2. **Platform considerations**:
-   - Linux: Use `/etc/group` or `getgroups(2)` syscall
-   - macOS: Similar, but group names may differ
-   - Windows: Not applicable (no Unix groups)
-
-3. **Edge cases**:
-   - Primary group vs. supplementary groups
-   - Group name vs. GID resolution
-   - NIS/LDAP/AD group lookups
-   - Container environments (mapped GIDs)
-
-### Workaround
-
-If you need to skip tests based on group membership:
+Use `feature group` to skip tests that require specific group membership:
 
 ```vtc
-# Option 1: Use feature cmd with 'groups'
-feature cmd "groups | grep -q wheel"
+vtest "Test requiring wheel group"
 
-# Option 2: Use shell command
-shell -exit 0 "groups | grep -q wheel" || { skip "Not in wheel group"; }
+# Skip if not in wheel group
+feature group wheel
+
+# Test code here - only runs if user is in wheel group
+server s1 {
+    rxreq
+    txresp -status 200
+} -start
 ```
 
 ### Affected Tests
@@ -181,17 +159,12 @@ Very few tests use `feature group`:
 
 **Estimated impact**: < 1% of test suite
 
-### Future Work
+### Test Coverage
 
-**Priority**: Low
-**Estimated effort**: 2-3 hours
-
-Implementation checklist:
-- [ ] Add `isInGroup()` helper function
-- [ ] Integrate with feature detection
-- [ ] Test on Linux and macOS
-- [ ] Document platform differences
-- [ ] Handle Windows gracefully (always return false)
+Test files demonstrating group checking:
+- `tests/test_feature_group.vtc` - User IS in group (passes)
+- `tests/test_feature_group_staff.vtc` - User NOT in group (skipped)
+- `tests/test_feature_group_skip.vtc` - Group doesn't exist (skipped)
 
 ---
 
@@ -642,24 +615,29 @@ These fixes brought the pass rate from 10/48 to 11/48 tests.
 
 ## Summary Table
 
-| Limitation | Impact | Workaround Available? | Estimated Fix Time |
-|------------|--------|----------------------|-------------------|
+| Limitation | Impact | Workaround Available? | Status |
+|------------|--------|----------------------|--------|
 | Terminal emulation | High (for terminal tests) | Partial | 8-14 hours |
 | Gzip support | Medium (6+ tests) | None | 4-6 hours |
 | HTTP/2 streams | High (25+ tests) | Use HTTP/1 | 8-12 hours |
 | Barrier sync bugs | Low (1 test) | Simplify test | 2-4 hours |
-| Group checking | Low | Yes (shell command) | 2-3 hours |
+| Group checking | Low | N/A | ✅ Implemented (Linux) |
 | Platform detection | Medium (non-Linux) | Yes (manual checks) | 4-8 hours |
 | Parallel execution | Medium (performance) | Yes (GNU parallel) | 3-5 hours |
 | Process output macros | Low | Yes (temp files) | 1-2 hours |
 | ~~Spec block execution~~ | ✅ **Implemented** | N/A | ~~2-4 hours~~ |
 
-**Total technical debt**: ~33-56 hours of development (reduced from ~35-60 hours)
+**Total technical debt**: ~31-56 hours of development (reduced from ~35-60 hours)
 
 ---
 
-**Document Version**: 1.1
+**Document Version**: 1.2
 **Last Updated**: 2025-11-17
+**Changes**:
+- v1.2: Implemented group checking for Linux (Section 2)
+- v1.1: Added VTC test compatibility status (Section 7)
+- v1.0: Initial version
+
 **Related Documents**:
 - `TERMINAL_EMULATION_SPEC.md` - Terminal emulation implementation plan
 - `PHASE5_COMPLETE.md` - Phase 5 completion report

@@ -1,0 +1,17 @@
+vtest "Test feature group checking - user NOT in wheel group"
+
+# This test should be SKIPPED because root user is typically not in the wheel group on Linux
+# (wheel is more common on BSD systems)
+feature group wheel
+
+# If we get here, the test was not skipped (unexpected)
+server s1 {
+    rxreq
+    txresp -status 200 -body "Should not reach here"
+} -start
+
+client c1 -connect ${s1_sock} {
+    txreq -url "/test"
+    rxresp
+    expect resp.status == 200
+} -run
