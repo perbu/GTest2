@@ -36,21 +36,23 @@ func nodeToSpec(children []*vtc.Node) string {
 }
 
 // createHTTP1ProcessFunc creates a processFunc for HTTP/1 server connections
-func createHTTP1ProcessFunc(spec string) server.ProcessFunc {
+func createHTTP1ProcessFunc(spec string, ctx *vtc.ExecContext) server.ProcessFunc {
 	return func(conn net.Conn, specStr string, listenAddr string) error {
 		logger := logging.NewLogger("http")
 		h := http1.New(conn, logger)
 		handler := http1.NewHandler(h)
+		handler.SetContext(ctx)
 		return handler.ProcessSpec(spec)
 	}
 }
 
 // createHTTP1ClientProcessFunc creates a processFunc for HTTP/1 client connections
-func createHTTP1ClientProcessFunc(spec string) client.ProcessFunc {
+func createHTTP1ClientProcessFunc(spec string, ctx *vtc.ExecContext) client.ProcessFunc {
 	return func(conn net.Conn, specStr string) error {
 		logger := logging.NewLogger("http")
 		h := http1.New(conn, logger)
 		handler := http1.NewHandler(h)
+		handler.SetContext(ctx)
 		return handler.ProcessSpec(spec)
 	}
 }
@@ -113,7 +115,7 @@ func cmdClient(args []string, priv interface{}, logger *logging.Logger) error {
 		case "-start":
 			// Start client in background
 			logger.Debug("Client %s: processing -start flag", clientName)
-			processFunc := createHTTP1ClientProcessFunc(c.Spec)
+			processFunc := createHTTP1ClientProcessFunc(c.Spec, ctx)
 			err := c.Start(processFunc)
 			if err != nil {
 				logger.Debug("Client %s: -start failed: %v", clientName, err)
@@ -130,7 +132,7 @@ func cmdClient(args []string, priv interface{}, logger *logging.Logger) error {
 		case "-run":
 			// Run client synchronously
 			logger.Debug("Client %s: processing -run flag", clientName)
-			processFunc := createHTTP1ClientProcessFunc(c.Spec)
+			processFunc := createHTTP1ClientProcessFunc(c.Spec, ctx)
 			err := c.Run(processFunc)
 			if err != nil {
 				logger.Debug("Client %s: -run failed: %v", clientName, err)
@@ -254,7 +256,7 @@ func cmdServer(args []string, priv interface{}, logger *logging.Logger) error {
 		case "-start":
 			// Start server with HTTP/1 processFunc
 			logger.Debug("Server %s: processing -start flag", serverName)
-			processFunc := createHTTP1ProcessFunc(s.Spec)
+			processFunc := createHTTP1ProcessFunc(s.Spec, ctx)
 			err := s.Start(processFunc)
 			if err != nil {
 				logger.Debug("Server %s: -start failed: %v", serverName, err)
@@ -285,7 +287,7 @@ func cmdServer(args []string, priv interface{}, logger *logging.Logger) error {
 				return fmt.Errorf("server: -dispatch only works on s0")
 			}
 			s.IsDispatch = true
-			processFunc := createHTTP1ProcessFunc(s.Spec)
+			processFunc := createHTTP1ProcessFunc(s.Spec, ctx)
 			err := s.Start(processFunc)
 			if err != nil {
 				logger.Debug("Server %s: -dispatch failed: %v", serverName, err)
