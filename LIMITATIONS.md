@@ -687,19 +687,308 @@ These fixes brought the pass rate from 10/48 to 11/48 tests.
 
 ---
 
+## 8. Test Failures and TODOs
+
+**Status**: Identified via systematic test run (2025-11-17)
+
+**Test Results**: Out of 54 VTC tests:
+- ✅ **17 passing** (31%)
+- ❌ **30 failing** (56%)
+- ⏱️ **7 timeout** (13%)
+
+### 8.1 HTTP/1 Missing Commands
+
+**Priority**: Medium | **Effort**: 2-4 hours | **Impact**: ~7 tests
+
+The following HTTP/1 commands are not implemented:
+
+- [ ] **`shutdown`** - Graceful connection shutdown
+  - Test: `a00016.vtc`
+  - Syntax: `shutdown [-read|-write] [-notconn]`
+  - Description: Close read/write side of socket connection
+  - Effort: 1-2 hours
+
+- [ ] **`rxresphdrs`** - Receive response headers only
+  - Test: `a00019.vtc`
+  - Description: Read headers without consuming body
+  - Allows incremental body reading with `rxrespbody`
+  - Effort: 1-2 hours
+
+- [ ] **`rxrespbody`** - Receive response body incrementally
+  - Test: `a00019.vtc`
+  - Syntax: `rxrespbody [-max N]`
+  - Description: Read body in chunks, accumulating bodylen
+  - Effort: 1-2 hours
+
+- [ ] **`write_body`** - Write request/response body to file
+  - Test: `a00015.vtc`
+  - Syntax: `write_body FILENAME`
+  - Description: Save body to file in tmpdir
+  - Effort: 1 hour
+
+### 8.2 HTTP/1 Missing Options
+
+**Priority**: Medium | **Effort**: 2-3 hours | **Impact**: ~3 tests
+
+- [ ] **`-bodyfrom FILE`** - Send body from file
+  - Test: `a00020.vtc`
+  - Syntax: `txreq -bodyfrom ${testdir}/file.txt`
+  - Description: Read body content from specified file
+  - Effort: 1 hour
+
+- [ ] **`-nouseragent`** - Suppress default User-Agent header
+  - Test: `a00024.vtc`
+  - Syntax: `txreq -nouseragent`
+  - Description: Don't add default User-Agent header
+  - Effort: 30 minutes
+
+- [ ] **`-noserver`** - Suppress default Server header
+  - Test: `a00024.vtc`
+  - Syntax: `txresp -noserver`
+  - Description: Don't add default Server header
+  - Effort: 30 minutes
+
+- [ ] **Header value parsing** - Support multi-word header values
+  - Test: `a00015.vtc`
+  - Issue: `-hdr "Content-Type: text/plain"` fails with parse error
+  - Current workaround: Use `-hdr Content-Type: "text/plain"`
+  - Effort: 1 hour
+
+### 8.3 HTTP/1 Default Headers Issue
+
+**Priority**: High | **Effort**: 1 hour | **Impact**: ~1 test
+
+- [ ] **Default User-Agent/Server headers**
+  - Test: `a00024.vtc`
+  - **Issue**: User-Agent shows "gvtest" instead of client NAME
+  - **Expected**: `User-Agent: c101` (for client c101)
+  - **Expected**: `Server: s1` (for server s1)
+  - **Root cause**: Default header logic not using client/server name
+  - Effort: 1 hour
+
+### 8.4 HTTP/2 Missing HPACK Options
+
+**Priority**: High | **Effort**: 4-6 hours | **Impact**: ~8 tests
+
+HTTP/2 HPACK (header compression) options are not implemented:
+
+- [ ] **`-idxHdr INDEX`** - Indexed header field
+  - Tests: `a02008.vtc`, `a02009.vtc`, `a02019.vtc`, `a02021.vtc`
+  - Description: Reference header by static/dynamic table index
+  - Example: `-idxHdr 2` (references `:method GET`)
+  - Effort: 2 hours
+
+- [ ] **`-litIdxHdr inc|not|never INDEX encoding VALUE`** - Literal indexed header
+  - Tests: `a02009.vtc`, `a02021.vtc`
+  - Description: Literal header with indexed name
+  - Example: `-litIdxHdr inc 1 huf www.example.com`
+  - Encoding: `plain` or `huf` (Huffman)
+  - Effort: 2 hours
+
+- [ ] **`-litHdr inc|not|never encoding NAME encoding VALUE`** - Literal header
+  - Test: `a02002.vtc`
+  - Description: Literal header with literal name
+  - Example: `-litHdr inc plain foo plain bar`
+  - Effort: 2 hours
+
+**Note**: HPACK implementation exists in `pkg/hpack/`, but VTC command interface is missing.
+
+### 8.5 HTTP/2 Missing Stream Options
+
+**Priority**: High | **Effort**: 3-4 hours | **Impact**: ~5 tests
+
+- [ ] **`-bodylen N`** - Send body of specified length
+  - Test: `a02003.vtc`
+  - Description: Generate body with N bytes (like HTTP/1 `-bodylen`)
+  - Effort: 30 minutes
+
+- [ ] **`-req METHOD`** - Specify HTTP method
+  - Test: `a02011.vtc`
+  - Description: Set `:method` pseudo-header
+  - Effort: 30 minutes
+
+- [ ] **`-method METHOD`** - Alternative method syntax
+  - Test: `a02014.vtc`
+  - Description: Same as `-req` but different flag name
+  - Effort: 15 minutes
+
+- [ ] **`-nohdrend`** - Don't set END_HEADERS flag
+  - Test: `a02006.vtc`
+  - Description: Leave HEADERS frame incomplete for CONTINUATION
+  - Used with `txcont` command
+  - Effort: 1 hour
+
+### 8.6 HTTP/2 Missing Commands
+
+**Priority**: High | **Effort**: 4-6 hours | **Impact**: ~8 tests
+
+- [ ] **`txsettings`** - Send SETTINGS frame from stream 0
+  - Tests: `a02008.vtc`, `a02010.vtc`
+  - Syntax: `stream 0 { txsettings -hdrtbl 256 -winsize 128 }`
+  - Description: Send SETTINGS with specified parameters
+  - Effort: 2 hours
+
+- [ ] **`rxsettings`** - Receive and validate SETTINGS frame
+  - Test: `a02008.vtc`
+  - Syntax: `rxsettings` with `expect settings.ack == true`
+  - Effort: 1 hour
+
+- [ ] **`rxpush`** - Receive push promise
+  - Test: `a02017.vtc`
+  - Description: Receive PUSH_PROMISE frame
+  - Expects: `push.id`, `req.url`, `req.method`
+  - Effort: 2 hours
+
+- [ ] **`txcont`** - Send CONTINUATION frame
+  - Test: `a02006.vtc`
+  - Syntax: `txcont -nohdrend -hdr foo bar`
+  - Description: Send CONTINUATION after incomplete HEADERS
+  - Effort: 1 hour
+
+- [ ] **`fatal`** - Mark point as fatal
+  - Test: `a02024.vtc`
+  - Description: Like `non_fatal` but opposite (all errors fatal after this)
+  - Effort: 30 minutes
+
+- [ ] **`loop N { }`** - Loop construct
+  - Test: `a02028.vtc`
+  - Syntax: `loop 3 { stream next { txreq; rxresp } }`
+  - Description: Repeat block N times
+  - Effort: 1 hour
+
+- [ ] **`stream next { }`** - Auto-increment stream ID
+  - Test: `a02028.vtc`
+  - Description: Use next available odd (client) or even (server) stream ID
+  - Effort: 1 hour
+
+### 8.7 HTTP/2 Stream Lifecycle Issues
+
+**Priority**: High | **Effort**: 4-8 hours | **Impact**: ~5 tests
+
+**Symptoms**: "stream X not found" errors
+
+**Affected tests**: `a02006.vtc`, `a02007.vtc`, `a02011.vtc`, `a02015.vtc`
+
+**Issue**: Stream management has bugs where streams are not properly created or are prematurely cleaned up before commands execute.
+
+**Potential root causes**:
+- Stream creation timing issues
+- Stream cleanup happening too early
+- Stream ID tracking inconsistencies
+- Race conditions in stream lifecycle
+
+**Investigation needed**:
+- [ ] Trace stream creation/destruction lifecycle
+- [ ] Check stream map synchronization
+- [ ] Verify stream state machine transitions
+- [ ] Review stream cleanup conditions
+
+**Effort**: 4-8 hours (investigation + fixes)
+
+### 8.8 HTTP/2 Timeout/Deadlock Issues
+
+**Priority**: High | **Effort**: 8-16 hours | **Impact**: 7 tests
+
+**Affected tests**: `a02000.vtc`, `a02004.vtc`, `a02005.vtc`, `a02012.vtc`, `a02020.vtc`, `a02023.vtc`, `a02026.vtc`
+
+**Symptoms**: Tests hang and timeout after 10 seconds
+
+**Likely causes**:
+- Missing command implementations causing incomplete handshakes
+- Stream synchronization deadlocks
+- Missing frame acknowledgments
+- Incorrect flow control window management
+- Connection-level vs stream-level command confusion
+
+**Investigation approach**:
+- [ ] Run with verbose logging to see where tests hang
+- [ ] Check for missing `rxsettings` acknowledgments
+- [ ] Verify flow control window updates
+- [ ] Review connection preface exchange
+- [ ] Check for goroutine deadlocks
+
+**Note**: Some timeouts may resolve after implementing missing commands (8.4-8.6)
+
+**Effort**: 8-16 hours (many likely resolve with other fixes)
+
+### 8.9 Test Framework Issues
+
+**Priority**: Low | **Effort**: 2-3 hours | **Impact**: 3 tests
+
+- [ ] **Expected failure tests**
+  - Test: `a00014.vtc`
+  - Issue: Test contains intentionally invalid command but framework doesn't support expected failures
+  - Expected: Test should pass when invalid command is properly rejected
+  - Effort: 1-2 hours
+
+- [ ] **Exit code 77 handling**
+  - Tests: `test_feature_group_skip.vtc`, `test_feature_group_staff.vtc`
+  - Issue: Exit code 77 (VTC skip code) is treated as failure instead of skip
+  - Expected: These tests should be marked as "SKIPPED" not "FAILED"
+  - Effort: 1 hour
+
+### 8.10 Uninvestigated Failures
+
+**Priority**: Medium | **Effort**: 4-6 hours | **Impact**: ~5 tests
+
+The following tests fail but need individual investigation:
+
+- [ ] `a00018.vtc` - Need to examine failure mode
+- [ ] `a00021.vtc` - Need to examine failure mode
+- [ ] `a00025.vtc` - Need to examine failure mode
+- [ ] `a00027.vtc` - Need to examine failure mode
+- [ ] `a00029.vtc` - Need to examine failure mode
+
+**Next steps**: Run each with `-v` flag and analyze error messages
+
+### Implementation Priority Recommendations
+
+Based on impact and effort:
+
+**Phase 1 - Quick wins** (4-6 hours):
+1. Default User-Agent/Server headers (8.3) - 1 test
+2. HTTP/1 missing options (8.2) - 3 tests
+3. Exit code 77 handling (8.9) - 2 tests
+
+**Phase 2 - HTTP/2 HPACK** (4-6 hours):
+1. Implement `-idxHdr`, `-litIdxHdr`, `-litHdr` (8.4) - 8 tests
+
+**Phase 3 - HTTP/2 stream commands** (6-10 hours):
+1. Stream options and commands (8.5, 8.6) - 10+ tests
+2. Investigate stream lifecycle issues (8.7)
+
+**Phase 4 - Complex issues** (12-20 hours):
+1. HTTP/2 timeout/deadlock investigation (8.8) - 7 tests
+2. HTTP/1 missing commands (8.1) - 7 tests
+3. Uninvestigated failures (8.10) - 5 tests
+
+**Total estimated effort**: 30-50 hours to reach 90%+ test pass rate
+
+---
+
 ## Summary Table
 
 | Limitation | Impact | Workaround Available? | Status |
 |------------|--------|----------------------|--------|
+| HTTP/1 missing commands | Medium (7 tests) | None | 2-4 hours |
+| HTTP/1 missing options | Medium (3 tests) | None | 2-3 hours |
+| HTTP/1 default headers | High (1 test) | Manual headers | 1 hour |
+| HTTP/2 HPACK options | High (8 tests) | None | 4-6 hours |
+| HTTP/2 stream options | High (5 tests) | None | 3-4 hours |
+| HTTP/2 commands | High (8 tests) | None | 4-6 hours |
+| HTTP/2 stream lifecycle | High (5 tests) | None | 4-8 hours |
+| HTTP/2 timeouts | High (7 tests) | None | 8-16 hours |
+| Test framework issues | Low (3 tests) | None | 2-3 hours |
 | Semaphore commands | Low (3+ tests) | None | 2-3 hours |
 | Log expectation | Low (advanced tests) | Manual log parsing | 3-5 hours |
 | Chunked encoding commands | Low (few tests) | None | 1-2 hours |
 
 ---
 
-**Document Version**: 1.3
+**Document Version**: 1.4
 **Last Updated**: 2025-11-17
 **Changes**:
+- v1.4: Added comprehensive test failure analysis and TODOs (Section 8) - 54 tests analyzed with detailed failure categorization
 - v1.3: Updated to reflect major implementations: parallel execution, process output macros, gzip support, HTTP/2 streams, and barrier fixes
 - v1.2: Implemented group checking for Linux (Section 2)
 - v1.1: Added VTC test compatibility status (Section 7)
