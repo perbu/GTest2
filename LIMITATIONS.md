@@ -499,23 +499,161 @@ If you encounter a limitation not documented here:
 
 ---
 
+---
+
+## 7. VTC Test Compatibility Status
+
+**Status**: Tested against VTest2 test suite (Phase 5)
+
+**Impact**: Medium (test coverage varies by feature area)
+
+### Test Results Summary
+
+As of 2025-11-17, GTest has been tested against 58 VTC test files from the VTest2 suite:
+
+| Category | Count | Pass Rate | Notes |
+|----------|-------|-----------|-------|
+| Terminal tests | 10 | N/A | Moved to `tests/terminal/` (requires terminal emulation) |
+| HTTP/1 basic tests | 11 | 100% | Core HTTP/1 functionality working |
+| Tests with missing features | 36 | 0% | Require features listed below |
+| Tests with complex barriers | 1 | 0% | Timing/sync issues |
+
+**Overall**: 11/48 non-terminal tests passing (23%)
+
+### Tests Moved to `tests/terminal/`
+
+The following tests require terminal emulation (process command with TTY):
+- `a00000.vtc` - VTest framework self-test with process commands
+- `a00001.vtc` - Teken terminal emulator test (requires vttest)
+- `a00008.vtc` - Barrier operations with process commands
+- `a00009.vtc` - VTC process: match text
+- `a00022.vtc`, `a00023.vtc`, `a00026.vtc`, `a00028.vtc` - Process-based tests
+- `a02022.vtc`, `a02025.vtc` - HTTP/2 with process commands
+
+These tests are preserved for future implementation but excluded from the main test suite.
+
+### Missing Features Identified
+
+#### 7.1 Gzip Support
+
+**Status**: Partially implemented
+
+The `gunzip` command exists but compression/decompression options are missing:
+
+❌ `txreq -gzipbody DATA` - Send gzip-compressed request body
+❌ `txresp -gzipbody DATA` - Send gzip-compressed response body
+❌ `txresp -gziplevel N` - Set compression level
+✅ `gunzip` - Decompress received body (implemented but untested)
+
+**Affected tests**: `a00011.vtc` (gzip support test), plus ~5 other tests
+
+**Workaround**: None available for these specific tests
+
+**Implementation effort**: 4-6 hours
+
+#### 7.2 HTTP/2 Stream Commands
+
+**Status**: Not implemented
+
+HTTP/2 tests require the `stream` command for multiplexed stream management:
+
+❌ `stream ID -run` - Run commands on specific HTTP/2 stream
+❌ `stream ID -start` - Start stream in background
+❌ `stream ID -wait` - Wait for stream completion
+
+**Affected tests**: All `a02xxx.vtc` tests except basic ones
+
+**Impact**: ~25 HTTP/2 tests cannot run
+
+**Workaround**: Use HTTP/1 tests to validate basic HTTP functionality
+
+**Implementation effort**: 8-12 hours (requires HTTP/2 stream state machine)
+
+#### 7.3 Barrier Synchronization
+
+**Status**: Basic implementation with issues
+
+Barriers work for simple cases but complex multi-barrier scenarios (like `a00013.vtc`) experience deadlocks.
+
+✅ `barrier NAME sync` - Basic synchronization
+✅ `barrier NAME sock COUNT` - Socket-based barriers (treated same as cond)
+✅ `barrier NAME cond COUNT` - Condition variable barriers
+✅ `barrier NAME -cyclic` - Cyclic barriers
+⚠️ Complex multi-barrier coordination - May deadlock
+
+**Affected tests**: `a00013.vtc` (complex barrier test)
+
+**Issue**: Likely race condition or incorrect barrier reset logic
+
+**Implementation effort**: 2-4 hours (debugging and fixing sync logic)
+
+#### 7.4 Additional HTTP Commands
+
+Other missing HTTP/1 command options:
+
+❌ `txreq/txresp -gzip` flags
+❌ `chunkedlen` command
+❌ `sema` command (semaphores)
+❌ `logexpect` command
+❌ Advanced header manipulation
+
+**Affected tests**: Various (~10 tests)
+
+**Implementation effort**: 1-3 hours per feature
+
+### Successfully Implemented Features (This Session)
+
+The following features were implemented to improve test compatibility:
+
+✅ `expect FIELD == <undef>` - Check for undefined/missing headers (fixed `a00012.vtc`)
+✅ `barrier NAME sock COUNT` - Socket-based barrier syntax
+✅ `delay SECONDS` - Sleep command in HTTP specs
+
+These fixes brought the pass rate from 10/48 to 11/48 tests.
+
+### Recommendations for Test Coverage
+
+**Current focus** (11 passing tests):
+- Basic HTTP/1.x request/response handling
+- Connection management
+- Header parsing and validation
+- Simple expect assertions
+- Null byte handling in bodies
+
+**Missing coverage**:
+- Compression/decompression workflows
+- HTTP/2 stream multiplexing
+- Complex synchronization scenarios
+- Terminal-based interactive testing
+
+**Priority for next implementation phase**:
+1. Gzip support (high impact, moderate effort)
+2. Fix barrier synchronization (low effort, fixes 1 test)
+3. HTTP/2 streams (high effort, enables 25+ tests)
+4. Terminal emulation (high effort, enables 10 tests)
+
+---
+
 ## Summary Table
 
 | Limitation | Impact | Workaround Available? | Estimated Fix Time |
 |------------|--------|----------------------|-------------------|
 | Terminal emulation | High (for terminal tests) | Partial | 8-14 hours |
+| Gzip support | Medium (6+ tests) | None | 4-6 hours |
+| HTTP/2 streams | High (25+ tests) | Use HTTP/1 | 8-12 hours |
+| Barrier sync bugs | Low (1 test) | Simplify test | 2-4 hours |
 | Group checking | Low | Yes (shell command) | 2-3 hours |
 | Platform detection | Medium (non-Linux) | Yes (manual checks) | 4-8 hours |
 | Parallel execution | Medium (performance) | Yes (GNU parallel) | 3-5 hours |
 | Process output macros | Low | Yes (temp files) | 1-2 hours |
 | Spec block execution | Medium | N/A (core feature) | 2-4 hours |
 
-**Total technical debt**: ~20-36 hours of development
+**Total technical debt**: ~35-60 hours of development
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2025-11-16
+**Document Version**: 1.1
+**Last Updated**: 2025-11-17
 **Related Documents**:
 - `TERMINAL_EMULATION_SPEC.md` - Terminal emulation implementation plan
 - `PHASE5_COMPLETE.md` - Phase 5 completion report

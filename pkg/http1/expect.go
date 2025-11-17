@@ -102,8 +102,16 @@ func (h *HTTP) getResponseField(name string, parts []string) (string, error) {
 
 // compare performs the comparison operation
 func compare(actual, op, expected string) (bool, error) {
+	// Handle <undef> special value
+	isActualUndef := (actual == "")
+	isExpectedUndef := (expected == "<undef>")
+
 	switch op {
 	case "==", "-eq":
+		// Check if comparing with <undef>
+		if isExpectedUndef {
+			return isActualUndef, nil
+		}
 		// -eq can be either string or numeric, try numeric first
 		if op == "-eq" {
 			actualInt, err1 := strconv.ParseInt(actual, 0, 64)
@@ -114,6 +122,10 @@ func compare(actual, op, expected string) (bool, error) {
 		}
 		return actual == expected, nil
 	case "!=", "-ne":
+		// Check if comparing with <undef>
+		if isExpectedUndef {
+			return !isActualUndef, nil
+		}
 		// -ne is numeric not-equal
 		if op == "-ne" {
 			return compareNumeric(actual, "!=", expected)

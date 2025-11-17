@@ -93,6 +93,9 @@ func (h *Handler) ProcessCommand(cmdLine string) error {
 	case "gunzip":
 		h.HTTP.Logger.Debug("Executing gunzip")
 		err = h.HTTP.Gunzip()
+	case "delay":
+		h.HTTP.Logger.Debug("Executing delay")
+		err = h.handleDelay(args)
 	default:
 		err = fmt.Errorf("unknown HTTP command: %s", cmd)
 	}
@@ -339,6 +342,27 @@ func (h *Handler) handleTimeout(args []string) error {
 	}
 
 	h.HTTP.SetIOTimeout(d)
+	return nil
+}
+
+// handleDelay processes delay command - sleeps for specified duration
+func (h *Handler) handleDelay(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("delay requires duration argument")
+	}
+
+	d, err := time.ParseDuration(args[0] + "s")
+	if err != nil {
+		// Try parsing as seconds directly
+		seconds, err2 := strconv.ParseFloat(args[0], 64)
+		if err2 != nil {
+			return fmt.Errorf("invalid delay duration: %w", err)
+		}
+		d = time.Duration(seconds * float64(time.Second))
+	}
+
+	h.HTTP.Logger.Debug("Delaying for %v", d)
+	time.Sleep(d)
 	return nil
 }
 
