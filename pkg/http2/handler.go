@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/perbu/GTest/pkg/hpack"
 )
 
 // Handler processes HTTP/2 command specifications
@@ -244,9 +246,9 @@ func (h *Handler) handleStream(args []string) error {
 		return h.waitForStream(uint32(streamID))
 	}
 
-	// Join spec parts with newlines (they may have been split by the tokenizer)
+	// Join spec parts with spaces (they have been split by the tokenizer)
 	// Also handle the special ||| delimiter used for nested commands
-	spec := strings.Join(specParts, "\n")
+	spec := strings.Join(specParts, " ")
 	spec = strings.ReplaceAll(spec, "|||", "\n")
 
 	// For -run and -start, we need a spec
@@ -511,13 +513,16 @@ func parseBool(s string) (bool, error) {
 
 func (h *Handler) handleTxReq(streamID uint32, args []string) error {
 	opts := TxReqOptions{
-		Method:    "GET",
-		Path:      "/",
-		Scheme:    "http",
-		Authority: "localhost",
-		Headers:   make(map[string]string),
-		EndStream: true,
+		Method:            "GET",
+		Path:              "/",
+		Scheme:            "http",
+		Authority:         "localhost",
+		Headers:           make(map[string]string),
+		EndStream:         true,
+		HpackInstructions: nil,
 	}
+
+	var hpackInstructions []hpack.HpackInstruction
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -558,31 +563,100 @@ func (h *Handler) handleTxReq(streamID uint32, args []string) error {
 		case "-nostrend":
 			opts.EndStream = false
 		case "-idxHdr":
-			// HPACK header indexing control - for now, skip
+			// Indexed header field
 			if i+1 >= len(args) {
 				return fmt.Errorf("txreq: -idxHdr requires an argument")
 			}
-			i++
-		case "-litHdr":
-			// HPACK literal header - for now, skip but consume args
-			// Syntax: -litHdr inc|not|never indexed|plain "name" indexed|plain "value"
-			// We'll implement basic version
-			// Skip for now
-			for i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-				i++
+			index, err := strconv.Atoi(args[i+1])
+			if err != nil {
+				return fmt.Errorf("txreq: -idxHdr: invalid index: %w", err)
 			}
+			hpackInstructions = append(hpackInstructions, hpack.HpackInstruction{
+				Type:  "indexed",
+				Index: index,
+			})
+			i++
+		case "-litIdxHdr":
+			// Literal header with indexed name
+			// Syntax: -litIdxHdr inc|not|never <name-index> huf|plain <value>
+			if i+4 >= len(args) {
+				return fmt.Errorf("txreq: -litIdxHdr requires 4 arguments: mode nameIndex encoding value")
+			}
+			indexingMode, err := parseIndexingMode(args[i+1])
+			if err != nil {
+				return fmt.Errorf("txreq: -litIdxHdr: %w", err)
+			}
+			nameIndex, err := strconv.Atoi(args[i+2])
+			if err != nil {
+				return fmt.Errorf("txreq: -litIdxHdr: invalid name index: %w", err)
+			}
+			valueHuffman := args[i+3] == "huf"
+			value := args[i+4]
+			hpackInstructions = append(hpackInstructions, hpack.HpackInstruction{
+				Type:         "literal-indexed",
+				Index:        nameIndex,
+				Value:        value,
+				IndexingMode: indexingMode,
+				ValueHuffman: valueHuffman,
+			})
+			i += 4
+		case "-litHdr":
+			// Literal header with new name
+			// Syntax: -litHdr inc|not|never huf|plain <name> huf|plain <value>
+			if i+5 >= len(args) {
+				return fmt.Errorf("txreq: -litHdr requires 5 arguments: mode nameEncoding name valueEncoding value")
+			}
+			indexingMode, err := parseIndexingMode(args[i+1])
+			if err != nil {
+				return fmt.Errorf("txreq: -litHdr: %w", err)
+			}
+			nameHuffman := args[i+2] == "huf"
+			name := args[i+3]
+			valueHuffman := args[i+4] == "huf"
+			value := args[i+5]
+			hpackInstructions = append(hpackInstructions, hpack.HpackInstruction{
+				Type:         "literal-new",
+				Name:         name,
+				Value:        value,
+				IndexingMode: indexingMode,
+				NameHuffman:  nameHuffman,
+				ValueHuffman: valueHuffman,
+			})
+			i += 5
 		}
+	}
+
+	// If we have HPACK instructions, use them
+	if len(hpackInstructions) > 0 {
+		opts.HpackInstructions = hpackInstructions
 	}
 
 	return h.Conn.TxReq(streamID, opts)
 }
 
+// parseIndexingMode parses the indexing mode string
+func parseIndexingMode(mode string) (hpack.IndexingMode, error) {
+	switch mode {
+	case "inc":
+		return hpack.IndexingInc, nil
+	case "not":
+		return hpack.IndexingNot, nil
+	case "never":
+		return hpack.IndexingNever, nil
+	default:
+		return 0, fmt.Errorf("invalid indexing mode: %s (expected inc|not|never)", mode)
+	}
+}
+
 func (h *Handler) handleTxResp(streamID uint32, args []string) error {
 	opts := TxRespOptions{
-		Status:    "200",
-		Headers:   make(map[string]string),
-		EndStream: true,
+		Status:            "200",
+		Headers:           make(map[string]string),
+		EndStream:         true,
+		HpackInstructions: nil,
 	}
+
+	var hpackInstructions []hpack.HpackInstruction
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -610,7 +684,73 @@ func (h *Handler) handleTxResp(streamID uint32, args []string) error {
 			i++
 		case "-nostrend":
 			opts.EndStream = false
+		case "-idxHdr":
+			// Indexed header field
+			if i+1 >= len(args) {
+				return fmt.Errorf("txresp: -idxHdr requires an argument")
+			}
+			index, err := strconv.Atoi(args[i+1])
+			if err != nil {
+				return fmt.Errorf("txresp: -idxHdr: invalid index: %w", err)
+			}
+			hpackInstructions = append(hpackInstructions, hpack.HpackInstruction{
+				Type:  "indexed",
+				Index: index,
+			})
+			i++
+		case "-litIdxHdr":
+			// Literal header with indexed name
+			// Syntax: -litIdxHdr inc|not|never <name-index> huf|plain <value>
+			if i+4 >= len(args) {
+				return fmt.Errorf("txresp: -litIdxHdr requires 4 arguments: mode nameIndex encoding value")
+			}
+			indexingMode, err := parseIndexingMode(args[i+1])
+			if err != nil {
+				return fmt.Errorf("txresp: -litIdxHdr: %w", err)
+			}
+			nameIndex, err := strconv.Atoi(args[i+2])
+			if err != nil {
+				return fmt.Errorf("txresp: -litIdxHdr: invalid name index: %w", err)
+			}
+			valueHuffman := args[i+3] == "huf"
+			value := args[i+4]
+			hpackInstructions = append(hpackInstructions, hpack.HpackInstruction{
+				Type:         "literal-indexed",
+				Index:        nameIndex,
+				Value:        value,
+				IndexingMode: indexingMode,
+				ValueHuffman: valueHuffman,
+			})
+			i += 4
+		case "-litHdr":
+			// Literal header with new name
+			// Syntax: -litHdr inc|not|never huf|plain <name> huf|plain <value>
+			if i+5 >= len(args) {
+				return fmt.Errorf("txresp: -litHdr requires 5 arguments: mode nameEncoding name valueEncoding value")
+			}
+			indexingMode, err := parseIndexingMode(args[i+1])
+			if err != nil {
+				return fmt.Errorf("txresp: -litHdr: %w", err)
+			}
+			nameHuffman := args[i+2] == "huf"
+			name := args[i+3]
+			valueHuffman := args[i+4] == "huf"
+			value := args[i+5]
+			hpackInstructions = append(hpackInstructions, hpack.HpackInstruction{
+				Type:         "literal-new",
+				Name:         name,
+				Value:        value,
+				IndexingMode: indexingMode,
+				NameHuffman:  nameHuffman,
+				ValueHuffman: valueHuffman,
+			})
+			i += 5
 		}
+	}
+
+	// If we have HPACK instructions, use them
+	if len(hpackInstructions) > 0 {
+		opts.HpackInstructions = hpackInstructions
 	}
 
 	return h.Conn.TxResp(streamID, opts)

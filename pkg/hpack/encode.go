@@ -125,6 +125,11 @@ func (e *Encoder) SetMaxDynamicTableSize(size uint32) error {
 	return nil
 }
 
+// GetTable returns the encoder's table for lookups
+func (e *Encoder) GetTable() *Table {
+	return e.table
+}
+
 // encodeInteger encodes an integer with N-bit prefix as per RFC 7541 Section 5.1
 func encodeInteger(buf *bytes.Buffer, n uint, prefix byte, value uint64) error {
 	if n < 1 || n > 8 {
@@ -170,5 +175,112 @@ func encodeString(buf *bytes.Buffer, s string, huffman bool) error {
 		return err
 	}
 	buf.Write(data)
+	return nil
+}
+
+// IndexingMode specifies how a header should be indexed
+type IndexingMode int
+
+const (
+	IndexingInc   IndexingMode = iota // Incremental indexing (add to dynamic table)
+	IndexingNot                        // Without indexing (don't add to table)
+	IndexingNever                      // Never indexed (sensitive)
+)
+
+// HpackInstruction represents an explicit HPACK encoding instruction
+type HpackInstruction struct {
+	Type         string       // "indexed", "literal-indexed", "literal-new"
+	Index        int          // For indexed and literal-indexed
+	Name         string       // For literal-new
+	Value        string       // For literal instructions
+	IndexingMode IndexingMode // How to index the header
+	NameHuffman  bool         // Use Huffman encoding for name
+	ValueHuffman bool         // Use Huffman encoding for value
+}
+
+// EncodeExplicit encodes header fields using explicit HPACK instructions
+func (e *Encoder) EncodeExplicit(instructions []HpackInstruction) ([]byte, error) {
+	e.buf.Reset()
+
+	for _, inst := range instructions {
+		var err error
+		switch inst.Type {
+		case "indexed":
+			err = e.encodeIndexed(inst.Index)
+		case "literal-indexed":
+			err = e.encodeLiteralIndexedName(inst.Index, inst.Value, inst.IndexingMode, inst.ValueHuffman)
+		case "literal-new":
+			err = e.encodeLiteralNewName(inst.Name, inst.Value, inst.IndexingMode, inst.NameHuffman, inst.ValueHuffman)
+		default:
+			return nil, fmt.Errorf("unknown instruction type: %s", inst.Type)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return e.buf.Bytes(), nil
+}
+
+// encodeLiteralIndexedName encodes a literal header with indexed name
+func (e *Encoder) encodeLiteralIndexedName(nameIndex int, value string, mode IndexingMode, huffman bool) error {
+	switch mode {
+	case IndexingInc:
+		// Incremental indexing: 01xxxxxx
+		if err := encodeInteger(&e.buf, 6, 0x40, uint64(nameIndex)); err != nil {
+			return err
+		}
+		if err := encodeString(&e.buf, value, huffman); err != nil {
+			return err
+		}
+		// Add to dynamic table
+		if hf, err := e.table.Lookup(nameIndex); err == nil {
+			e.table.Add(HeaderField{Name: hf.Name, Value: value})
+		}
+	case IndexingNot:
+		// Without indexing: 0000xxxx
+		if err := encodeInteger(&e.buf, 4, 0x00, uint64(nameIndex)); err != nil {
+			return err
+		}
+		return encodeString(&e.buf, value, huffman)
+	case IndexingNever:
+		// Never indexed: 0001xxxx
+		if err := encodeInteger(&e.buf, 4, 0x10, uint64(nameIndex)); err != nil {
+			return err
+		}
+		return encodeString(&e.buf, value, huffman)
+	}
+	return nil
+}
+
+// encodeLiteralNewName encodes a literal header with new name
+func (e *Encoder) encodeLiteralNewName(name, value string, mode IndexingMode, nameHuffman, valueHuffman bool) error {
+	switch mode {
+	case IndexingInc:
+		// Incremental indexing: 01000000
+		e.buf.WriteByte(0x40)
+		if err := encodeString(&e.buf, name, nameHuffman); err != nil {
+			return err
+		}
+		if err := encodeString(&e.buf, value, valueHuffman); err != nil {
+			return err
+		}
+		// Add to dynamic table
+		e.table.Add(HeaderField{Name: name, Value: value})
+	case IndexingNot:
+		// Without indexing: 00000000
+		e.buf.WriteByte(0x00)
+		if err := encodeString(&e.buf, name, nameHuffman); err != nil {
+			return err
+		}
+		return encodeString(&e.buf, value, valueHuffman)
+	case IndexingNever:
+		// Never indexed: 00010000
+		e.buf.WriteByte(0x10)
+		if err := encodeString(&e.buf, name, nameHuffman); err != nil {
+			return err
+		}
+		return encodeString(&e.buf, value, valueHuffman)
+	}
 	return nil
 }
