@@ -179,6 +179,42 @@ func (h *HTTP) Close() error {
 	return nil
 }
 
+// Shutdown shuts down part or all of the connection
+// Options: read (shut down read side), write (shut down write side), or both
+func (h *HTTP) Shutdown(read, write, notconn bool) error {
+	if h.Conn == nil {
+		if notconn {
+			h.Logger.Log(3, "shutdown: connection not established (ignored)")
+			return nil
+		}
+		return fmt.Errorf("connection not established")
+	}
+
+	// Get the underlying TCP connection
+	tcpConn, ok := h.Conn.(*net.TCPConn)
+	if !ok {
+		return fmt.Errorf("connection is not a TCP connection")
+	}
+
+	if read && write {
+		// Shut down both directions (same as Close)
+		h.Logger.Log(3, "shutdown: closing both read and write")
+		return tcpConn.CloseRead()
+	} else if read {
+		// Shut down read side
+		h.Logger.Log(3, "shutdown: closing read side")
+		return tcpConn.CloseRead()
+	} else if write {
+		// Shut down write side
+		h.Logger.Log(3, "shutdown: closing write side")
+		return tcpConn.CloseWrite()
+	} else {
+		// Default: shut down both (like close)
+		h.Logger.Log(3, "shutdown: closing connection")
+		return h.Close()
+	}
+}
+
 // CompressBody compresses the body using gzip
 func (h *HTTP) CompressBody(data []byte) ([]byte, error) {
 	var buf bytes.Buffer

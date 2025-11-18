@@ -197,6 +197,9 @@ func (h *Handler) ProcessStreamCommand(streamID uint32, cmdLine string) error {
 	case "delay":
 		h.Conn.logger.Debug("Executing delay")
 		err = h.handleDelay(args)
+	case "write_body":
+		h.Conn.logger.Debug("Executing write_body on stream %d", streamID)
+		err = h.handleWriteBody(streamID, args)
 	default:
 		err = fmt.Errorf("unknown HTTP/2 stream command: %s", cmd)
 	}
@@ -953,4 +956,13 @@ func (h *Handler) handleConnectionExpect(field, op, expected string) error {
 	// This would require storing received SETTINGS, PING, GOAWAY frames
 
 	return nil
+}
+
+func (h *Handler) handleWriteBody(streamID uint32, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("write_body requires filename argument")
+	}
+
+	filename := args[0]
+	return h.Conn.WriteBody(streamID, filename)
 }

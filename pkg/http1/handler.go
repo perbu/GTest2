@@ -105,6 +105,18 @@ func (h *Handler) ProcessCommand(cmdLine string) error {
 	case "delay":
 		h.HTTP.Logger.Debug("Executing delay")
 		err = h.handleDelay(args)
+	case "shutdown":
+		h.HTTP.Logger.Debug("Executing shutdown")
+		err = h.handleShutdown(args)
+	case "rxresphdrs":
+		h.HTTP.Logger.Debug("Executing rxresphdrs")
+		err = h.handleRxRespHdrs(args)
+	case "rxrespbody":
+		h.HTTP.Logger.Debug("Executing rxrespbody")
+		err = h.handleRxRespBody(args)
+	case "write_body":
+		h.HTTP.Logger.Debug("Executing write_body")
+		err = h.handleWriteBody(args)
 	default:
 		// Try to execute as a global VTC command
 		err = h.tryGlobalCommand(cmd, args)
@@ -488,4 +500,71 @@ func (h *Handler) readBodyFromFile(filename string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to read file %s: %w", filename, err)
 	}
 	return data, nil
+}
+
+// handleShutdown processes shutdown command
+func (h *Handler) handleShutdown(args []string) error {
+	read := false
+	write := false
+	notconn := false
+
+	for _, arg := range args {
+		switch arg {
+		case "-read":
+			read = true
+		case "-write":
+			write = true
+		case "-notconn":
+			notconn = true
+		default:
+			return fmt.Errorf("unknown shutdown option: %s", arg)
+		}
+	}
+
+	// If neither -read nor -write specified, shut down both
+	if !read && !write {
+		read = true
+		write = true
+	}
+
+	return h.HTTP.Shutdown(read, write, notconn)
+}
+
+// handleRxRespHdrs processes rxresphdrs command - receives only response headers
+func (h *Handler) handleRxRespHdrs(args []string) error {
+	return h.HTTP.RxRespHdrs()
+}
+
+// handleRxRespBody processes rxrespbody command - receives response body
+func (h *Handler) handleRxRespBody(args []string) error {
+	maxBytes := -1 // -1 means read all
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-max":
+			if i+1 >= len(args) {
+				return fmt.Errorf("-max requires an argument")
+			}
+			n, err := strconv.Atoi(args[i+1])
+			if err != nil {
+				return fmt.Errorf("invalid -max value: %w", err)
+			}
+			maxBytes = n
+			i++
+		default:
+			return fmt.Errorf("unknown rxrespbody option: %s", args[i])
+		}
+	}
+
+	return h.HTTP.RxRespBody(maxBytes)
+}
+
+// handleWriteBody processes write_body command - writes body to a file
+func (h *Handler) handleWriteBody(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("write_body requires filename argument")
+	}
+
+	filename := args[0]
+	return h.HTTP.WriteBody(filename)
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -509,4 +510,37 @@ func (c *Conn) WriteRawFrame(length uint32, frameType FrameType, flags Flags, st
 // GetStream retrieves a stream by ID
 func (c *Conn) GetStream(streamID uint32) (*Stream, bool) {
 	return c.streams.Get(streamID)
+}
+
+// WriteBody writes the body from a stream to a file
+// For servers, writes the request body; for clients, writes the response body
+func (c *Conn) WriteBody(streamID uint32, filename string) error {
+	stream, ok := c.streams.Get(streamID)
+	if !ok {
+		return fmt.Errorf("stream %d not found", streamID)
+	}
+
+	stream.mu.Lock()
+	var body []byte
+	// Determine which body to write based on whether we're a client or server
+	// In server context: write request body
+	// In client context: write response body
+	if c.isClient {
+		body = stream.RespBody
+	} else {
+		body = stream.ReqBody
+	}
+	stream.mu.Unlock()
+
+	if body == nil {
+		return fmt.Errorf("no body to write for stream %d", streamID)
+	}
+
+	err := os.WriteFile(filename, body, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write body to %s: %w", filename, err)
+	}
+
+	c.logger.Log(3, "write_body: wrote %d bytes to %s", len(body), filename)
+	return nil
 }
