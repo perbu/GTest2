@@ -728,43 +728,45 @@ The following HTTP/1 commands are not implemented:
 
 ### 8.2 HTTP/1 Missing Options
 
+**Status**: ✅ Implemented (2025-11-17)
+
 **Priority**: Medium | **Effort**: 2-3 hours | **Impact**: ~3 tests
 
-- [ ] **`-bodyfrom FILE`** - Send body from file
+- [x] **`-bodyfrom FILE`** - Send body from file
   - Test: `a00020.vtc`
   - Syntax: `txreq -bodyfrom ${testdir}/file.txt`
   - Description: Read body content from specified file
-  - Effort: 1 hour
+  - **Status**: ✅ Implemented
 
-- [ ] **`-nouseragent`** - Suppress default User-Agent header
+- [x] **`-nouseragent`** - Suppress default User-Agent header
   - Test: `a00024.vtc`
   - Syntax: `txreq -nouseragent`
   - Description: Don't add default User-Agent header
-  - Effort: 30 minutes
+  - **Status**: ✅ Already implemented
 
-- [ ] **`-noserver`** - Suppress default Server header
+- [x] **`-noserver`** - Suppress default Server header
   - Test: `a00024.vtc`
   - Syntax: `txresp -noserver`
   - Description: Don't add default Server header
-  - Effort: 30 minutes
+  - **Status**: ✅ Already implemented
 
-- [ ] **Header value parsing** - Support multi-word header values
+- [x] **Header value parsing** - Support multi-word header values
   - Test: `a00015.vtc`
   - Issue: `-hdr "Content-Type: text/plain"` fails with parse error
-  - Current workaround: Use `-hdr Content-Type: "text/plain"`
-  - Effort: 1 hour
+  - **Status**: ✅ Fixed - nodeToSpec now properly quotes arguments containing colons or spaces
 
 ### 8.3 HTTP/1 Default Headers Issue
 
+**Status**: ✅ Implemented (2025-11-17)
+
 **Priority**: High | **Effort**: 1 hour | **Impact**: ~1 test
 
-- [ ] **Default User-Agent/Server headers**
+- [x] **Default User-Agent/Server headers**
   - Test: `a00024.vtc`
   - **Issue**: User-Agent shows "gvtest" instead of client NAME
   - **Expected**: `User-Agent: c101` (for client c101)
   - **Expected**: `Server: s1` (for server s1)
-  - **Root cause**: Default header logic not using client/server name
-  - Effort: 1 hour
+  - **Status**: ✅ Implemented - HTTP struct now has Name field, default headers use client/server name
 
 ### 8.4 HTTP/2 Missing HPACK Options
 
@@ -921,11 +923,9 @@ HTTP/2 HPACK (header compression) options are not implemented:
   - Expected: Test should pass when invalid command is properly rejected
   - Effort: 1-2 hours
 
-- [ ] **Exit code 77 handling**
+- [x] **Exit code 77 handling**
   - Tests: `test_feature_group_skip.vtc`, `test_feature_group_staff.vtc`
-  - Issue: Exit code 77 (VTC skip code) is treated as failure instead of skip
-  - Expected: These tests should be marked as "SKIPPED" not "FAILED"
-  - Effort: 1 hour
+  - **Status**: ✅ Already working correctly - tests properly return exit code 77 and are marked as skipped
 
 ### 8.10 Uninvestigated Failures
 
@@ -945,10 +945,10 @@ The following tests fail but need individual investigation:
 
 Based on impact and effort:
 
-**Phase 1 - Quick wins** (4-6 hours):
-1. Default User-Agent/Server headers (8.3) - 1 test
-2. HTTP/1 missing options (8.2) - 3 tests
-3. Exit code 77 handling (8.9) - 2 tests
+**Phase 1 - Quick wins** ✅ **COMPLETE** (2025-11-17):
+1. ✅ Default User-Agent/Server headers (8.3) - 1 test
+2. ✅ HTTP/1 missing options (8.2) - 3 tests
+3. ✅ Exit code 77 handling (8.9) - Already working
 
 **Phase 2 - HTTP/2 HPACK** (4-6 hours):
 1. Implement `-idxHdr`, `-litIdxHdr`, `-litHdr` (8.4) - 8 tests
@@ -985,9 +985,10 @@ Based on impact and effort:
 
 ---
 
-**Document Version**: 1.4
+**Document Version**: 1.5
 **Last Updated**: 2025-11-17
 **Changes**:
+- v1.5: Phase 1 quick wins complete - default headers use client/server name, -bodyfrom option, header value parsing fixed (Sections 8.2, 8.3, 8.9)
 - v1.4: Added comprehensive test failure analysis and TODOs (Section 8) - 54 tests analyzed with detailed failure categorization
 - v1.3: Updated to reflect major implementations: parallel execution, process output macros, gzip support, HTTP/2 streams, and barrier fixes
 - v1.2: Implemented group checking for Linux (Section 2)

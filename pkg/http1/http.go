@@ -29,6 +29,7 @@ type HTTP struct {
 	Conn    net.Conn
 	Logger  *logging.Logger
 	Timeout time.Duration
+	Name    string // Client or server name (for default headers)
 
 	// Request and response storage
 	ReqHeaders  []string // Request headers
