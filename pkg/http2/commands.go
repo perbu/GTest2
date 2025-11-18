@@ -10,43 +10,77 @@ import (
 
 // TxReqOptions represents options for sending an HTTP/2 request
 type TxReqOptions struct {
-	Method    string
-	Path      string
-	Scheme    string
-	Authority string
-	Headers   map[string]string
-	Body      []byte
-	EndStream bool
+	Method           string
+	Path             string
+	Scheme           string
+	Authority        string
+	Headers          map[string]string
+	Body             []byte
+	EndStream        bool
+	HpackInstructions []hpack.HpackInstruction // Explicit HPACK instructions
 }
 
 // TxReq sends an HTTP/2 request on a stream
 func (c *Conn) TxReq(streamID uint32, opts TxReqOptions) error {
 	stream := c.streams.GetOrCreate(streamID, fmt.Sprintf("stream-%d", streamID))
 
-	// Build headers with pseudo-headers first
-	headers := []hpack.HeaderField{
-		{Name: ":method", Value: opts.Method},
-		{Name: ":path", Value: opts.Path},
-		{Name: ":scheme", Value: opts.Scheme},
-		{Name: ":authority", Value: opts.Authority},
-	}
+	var headerBlock []byte
+	var err error
 
-	// Add regular headers
-	for name, value := range opts.Headers {
-		headers = append(headers, hpack.HeaderField{Name: name, Value: value})
-	}
+	// Use explicit HPACK instructions if provided
+	if len(opts.HpackInstructions) > 0 {
+		c.encoderMu.Lock()
+		headerBlock, err = c.encoder.EncodeExplicit(opts.HpackInstructions)
+		c.encoderMu.Unlock()
+		if err != nil {
+			return fmt.Errorf("failed to encode explicit headers: %w", err)
+		}
 
-	// Encode headers using HPACK (must be serialized)
-	c.encoderMu.Lock()
-	headerBlock, err := c.encoder.Encode(headers)
-	c.encoderMu.Unlock()
-	if err != nil {
-		return fmt.Errorf("failed to encode headers: %w", err)
-	}
+		// Store headers in stream based on instructions
+		for _, inst := range opts.HpackInstructions {
+			var name, value string
+			switch inst.Type {
+			case "indexed":
+				if hf, err := c.encoder.GetTable().Lookup(inst.Index); err == nil {
+					name, value = hf.Name, hf.Value
+				}
+			case "literal-indexed":
+				if hf, err := c.encoder.GetTable().Lookup(inst.Index); err == nil {
+					name, value = hf.Name, inst.Value
+				}
+			case "literal-new":
+				name, value = inst.Name, inst.Value
+			}
+			if name != "" {
+				stream.AddReqHeader(name, value)
+			}
+		}
+	} else {
+		// Build headers with pseudo-headers first
+		headers := []hpack.HeaderField{
+			{Name: ":method", Value: opts.Method},
+			{Name: ":path", Value: opts.Path},
+			{Name: ":scheme", Value: opts.Scheme},
+			{Name: ":authority", Value: opts.Authority},
+		}
 
-	// Store headers in stream
-	for _, hf := range headers {
-		stream.AddReqHeader(hf.Name, hf.Value)
+		// Add regular headers
+		for name, value := range opts.Headers {
+			headers = append(headers, hpack.HeaderField{Name: name, Value: value})
+		}
+
+		// Encode headers using HPACK (must be serialized)
+		c.encoderMu.Lock()
+		headerBlock, err = c.encoder.Encode(headers)
+		c.encoderMu.Unlock()
+		if err != nil {
+			return fmt.Errorf("failed to encode headers: %w", err)
+		}
+
+		// Store headers in stream
+		for _, hf := range headers {
+			stream.AddReqHeader(hf.Name, hf.Value)
+		}
 	}
 
 	// Determine if we should set END_STREAM
@@ -83,10 +117,11 @@ func (c *Conn) TxReq(streamID uint32, opts TxReqOptions) error {
 
 // TxRespOptions represents options for sending an HTTP/2 response
 type TxRespOptions struct {
-	Status    string
-	Headers   map[string]string
-	Body      []byte
-	EndStream bool
+	Status            string
+	Headers           map[string]string
+	Body              []byte
+	EndStream         bool
+	HpackInstructions []hpack.HpackInstruction // Explicit HPACK instructions
 }
 
 // TxResp sends an HTTP/2 response on a stream
@@ -96,27 +131,60 @@ func (c *Conn) TxResp(streamID uint32, opts TxRespOptions) error {
 		return fmt.Errorf("stream %d not found", streamID)
 	}
 
-	// Build headers with :status pseudo-header first
-	headers := []hpack.HeaderField{
-		{Name: ":status", Value: opts.Status},
-	}
+	var headerBlock []byte
+	var err error
 
-	// Add regular headers
-	for name, value := range opts.Headers {
-		headers = append(headers, hpack.HeaderField{Name: name, Value: value})
-	}
+	// Use explicit HPACK instructions if provided
+	if len(opts.HpackInstructions) > 0 {
+		c.encoderMu.Lock()
+		headerBlock, err = c.encoder.EncodeExplicit(opts.HpackInstructions)
+		c.encoderMu.Unlock()
+		if err != nil {
+			return fmt.Errorf("failed to encode explicit headers: %w", err)
+		}
 
-	// Encode headers using HPACK (must be serialized)
-	c.encoderMu.Lock()
-	headerBlock, err := c.encoder.Encode(headers)
-	c.encoderMu.Unlock()
-	if err != nil {
-		return fmt.Errorf("failed to encode headers: %w", err)
-	}
+		// Store headers in stream based on instructions
+		for _, inst := range opts.HpackInstructions {
+			var name, value string
+			switch inst.Type {
+			case "indexed":
+				if hf, err := c.encoder.GetTable().Lookup(inst.Index); err == nil {
+					name, value = hf.Name, hf.Value
+				}
+			case "literal-indexed":
+				if hf, err := c.encoder.GetTable().Lookup(inst.Index); err == nil {
+					name, value = hf.Name, inst.Value
+				}
+			case "literal-new":
+				name, value = inst.Name, inst.Value
+			}
+			if name != "" {
+				stream.AddRespHeader(name, value)
+			}
+		}
+	} else {
+		// Build headers with :status pseudo-header first
+		headers := []hpack.HeaderField{
+			{Name: ":status", Value: opts.Status},
+		}
 
-	// Store headers in stream
-	for _, hf := range headers {
-		stream.AddRespHeader(hf.Name, hf.Value)
+		// Add regular headers
+		for name, value := range opts.Headers {
+			headers = append(headers, hpack.HeaderField{Name: name, Value: value})
+		}
+
+		// Encode headers using HPACK (must be serialized)
+		c.encoderMu.Lock()
+		headerBlock, err = c.encoder.Encode(headers)
+		c.encoderMu.Unlock()
+		if err != nil {
+			return fmt.Errorf("failed to encode headers: %w", err)
+		}
+
+		// Store headers in stream
+		for _, hf := range headers {
+			stream.AddRespHeader(hf.Name, hf.Value)
+		}
 	}
 
 	// Determine if we should set END_STREAM

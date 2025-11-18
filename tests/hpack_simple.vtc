@@ -1,0 +1,17 @@
+vtest "Simple HPACK test"
+
+server s1 {
+	stream 1 {
+		rxreq
+		txresp
+	} -run
+} -start
+
+client c1 -connect ${s1_sock} {
+	stream 1 {
+		txreq -idxHdr 2 -idxHdr 6 -idxHdr 4
+		rxresp
+	} -run
+} -run
+
+server s1 -wait
