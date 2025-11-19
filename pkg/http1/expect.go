@@ -80,6 +80,10 @@ func (h *HTTP) getRequestField(name string, parts []string) (string, error) {
 func (h *HTTP) getResponseField(name string, parts []string) (string, error) {
 	switch name {
 	case "status":
+		// Status 0 is considered undefined
+		if h.Status == 0 {
+			return "", nil
+		}
 		return strconv.Itoa(h.Status), nil
 	case "reason":
 		return h.Reason, nil

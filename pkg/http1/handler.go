@@ -2,7 +2,9 @@ package http1
 
 import (
 	"fmt"
+	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -12,8 +14,9 @@ import (
 
 // Handler processes HTTP command specifications
 type Handler struct {
-	HTTP    *HTTP
-	Context interface{} // ExecContext for global commands (optional)
+	HTTP      *HTTP
+	Context   interface{} // ExecContext for global commands (optional)
+	NonFatal  bool        // If true, errors are logged but don't stop execution
 }
 
 // NewHandler creates a new HTTP command handler
@@ -84,6 +87,27 @@ func (h *Handler) ProcessCommand(cmdLine string) error {
 	case "rxresp":
 		h.HTTP.Logger.Debug("Executing rxresp")
 		err = h.handleRxResp(args)
+	case "rxresphdrs":
+		h.HTTP.Logger.Debug("Executing rxresphdrs")
+		err = h.handleRxRespHdrs(args)
+	case "rxrespbody":
+		h.HTTP.Logger.Debug("Executing rxrespbody")
+		err = h.handleRxRespBody(args)
+	case "write_body":
+		h.HTTP.Logger.Debug("Executing write_body")
+		err = h.handleWriteBody(args)
+	case "shutdown":
+		h.HTTP.Logger.Debug("Executing shutdown")
+		err = h.handleShutdown(args)
+	case "non_fatal":
+		h.HTTP.Logger.Debug("Executing non_fatal")
+		err = h.handleNonFatal(args)
+	case "fatal":
+		h.HTTP.Logger.Debug("Executing fatal")
+		err = h.handleFatal(args)
+	case "chunkedlen":
+		h.HTTP.Logger.Debug("Executing chunkedlen")
+		err = h.handleChunkedLen(args)
 	case "expect":
 		h.HTTP.Logger.Debug("Executing expect")
 		err = h.handleExpect(args)
@@ -115,6 +139,11 @@ func (h *Handler) ProcessCommand(cmdLine string) error {
 
 	if err != nil {
 		h.HTTP.Logger.Debug("Command %s failed: %v", cmd, err)
+		// If non_fatal mode is enabled, log error but don't return it
+		if h.NonFatal {
+			h.HTTP.Logger.Log(2, "Command %s failed (non-fatal): %v", cmd, err)
+			return nil
+		}
 	} else {
 		h.HTTP.Logger.Debug("Command %s completed successfully", cmd)
 	}
@@ -509,6 +538,191 @@ func tokenizeCommand(line string) []string {
 	}
 
 	return tokens
+}
+
+// handleRxRespHdrs processes rxresphdrs command
+func (h *Handler) handleRxRespHdrs(args []string) error {
+	return h.HTTP.RxRespHdrs()
+}
+
+// handleRxRespBody processes rxrespbody command
+func (h *Handler) handleRxRespBody(args []string) error {
+	opts := &RxRespBodyOptions{}
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-max":
+			if i+1 >= len(args) {
+				return fmt.Errorf("-max requires an argument")
+			}
+			maxBytes, err := strconv.Atoi(args[i+1])
+			if err != nil {
+				return fmt.Errorf("invalid -max value: %w", err)
+			}
+			opts.MaxBytes = maxBytes
+			i++
+		default:
+			return fmt.Errorf("unknown rxrespbody option: %s", args[i])
+		}
+	}
+
+	return h.HTTP.RxRespBody(opts)
+}
+
+// handleWriteBody processes write_body command
+func (h *Handler) handleWriteBody(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("write_body requires a filename argument")
+	}
+
+	filename := args[0]
+
+	// Get the execution context to find the tmpdir
+	var workDir string
+	if h.Context != nil {
+		if ctx, ok := h.Context.(*vtc.ExecContext); ok {
+			workDir = ctx.TmpDir
+		}
+	}
+
+	// If we have a working directory, make filename relative to it
+	if workDir != "" && !filepath.IsAbs(filename) {
+		filename = filepath.Join(workDir, filename)
+	}
+
+	// Write the body to the file
+	if h.HTTP.Body == nil {
+		return fmt.Errorf("no body to write")
+	}
+
+	err := os.WriteFile(filename, h.HTTP.Body, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write body to file %s: %w", filename, err)
+	}
+
+	h.HTTP.Logger.Debug("Wrote %d bytes to %s", len(h.HTTP.Body), filename)
+	return nil
+}
+
+// handleShutdown processes shutdown command
+func (h *Handler) handleShutdown(args []string) error {
+	shutdownRead := false
+	shutdownWrite := false
+	notConn := false
+
+	// If no args, shutdown both
+	if len(args) == 0 {
+		shutdownRead = true
+		shutdownWrite = true
+	}
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-read":
+			shutdownRead = true
+		case "-write":
+			shutdownWrite = true
+		case "-notconn":
+			notConn = true
+		default:
+			return fmt.Errorf("unknown shutdown option: %s", args[i])
+		}
+	}
+
+	// Get the underlying TCP connection
+	tcpConn, ok := h.HTTP.Conn.(*net.TCPConn)
+	if !ok {
+		if notConn {
+			// Not a TCP connection, but -notconn was specified, so don't error
+			h.HTTP.Logger.Debug("shutdown: not a TCP connection, but -notconn specified")
+			return nil
+		}
+		return fmt.Errorf("connection is not a TCP connection")
+	}
+
+	var err error
+	if shutdownRead && shutdownWrite {
+		// Shutdown both read and write
+		err = tcpConn.CloseRead()
+		if err != nil && !notConn {
+			return fmt.Errorf("failed to shutdown read: %w", err)
+		}
+		err = tcpConn.CloseWrite()
+		if err != nil && !notConn {
+			return fmt.Errorf("failed to shutdown write: %w", err)
+		}
+		h.HTTP.Logger.Debug("shutdown: both read and write")
+	} else if shutdownRead {
+		err = tcpConn.CloseRead()
+		if err != nil && !notConn {
+			return fmt.Errorf("failed to shutdown read: %w", err)
+		}
+		h.HTTP.Logger.Debug("shutdown: read")
+	} else if shutdownWrite {
+		err = tcpConn.CloseWrite()
+		if err != nil && !notConn {
+			return fmt.Errorf("failed to shutdown write: %w", err)
+		}
+		h.HTTP.Logger.Debug("shutdown: write")
+	}
+
+	return nil
+}
+
+// handleNonFatal processes non_fatal command
+func (h *Handler) handleNonFatal(args []string) error {
+	h.NonFatal = true
+	h.HTTP.Logger.Debug("Enabled non-fatal mode")
+	return nil
+}
+
+// handleFatal processes fatal command
+func (h *Handler) handleFatal(args []string) error {
+	h.NonFatal = false
+	h.HTTP.Logger.Debug("Disabled non-fatal mode")
+	return nil
+}
+
+// handleChunkedLen processes chunkedlen command
+func (h *Handler) handleChunkedLen(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("chunkedlen requires a size argument")
+	}
+
+	size, err := strconv.Atoi(args[0])
+	if err != nil {
+		return fmt.Errorf("invalid chunkedlen size: %w", err)
+	}
+
+	// Send chunk size in hex
+	_, err = fmt.Fprintf(h.HTTP.Conn, "%x\r\n", size)
+	if err != nil {
+		return fmt.Errorf("failed to write chunk size: %w", err)
+	}
+
+	if size > 0 {
+		// Send chunk data (zeros)
+		data := make([]byte, size)
+		_, err = h.HTTP.Conn.Write(data)
+		if err != nil {
+			return fmt.Errorf("failed to write chunk data: %w", err)
+		}
+
+		// Send trailing CRLF
+		_, err = h.HTTP.Conn.Write([]byte("\r\n"))
+		if err != nil {
+			return fmt.Errorf("failed to write chunk trailer: %w", err)
+		}
+	} else {
+		// Size 0 means final chunk, send trailing CRLF
+		_, err = h.HTTP.Conn.Write([]byte("\r\n"))
+		if err != nil {
+			return fmt.Errorf("failed to write final chunk trailer: %w", err)
+		}
+	}
+
+	h.HTTP.Logger.Debug("Sent chunk of size %d", size)
+	return nil
 }
 
 // readBodyFromFile reads the body content from a file
