@@ -200,12 +200,27 @@ func (h *Handler) handleTxReq(args []string) error {
 				return fmt.Errorf("-bodyfrom requires an argument")
 			}
 			filename := args[i+1]
+			i++
+			// Check if the next token should be concatenated (e.g., /path after ${macro})
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") && strings.HasPrefix(args[i+1], "/") {
+				filename += args[i+1]
+				i++
+			}
+			// Expand macros in filename
+			if h.Context != nil {
+				if ctx, ok := h.Context.(*vtc.ExecContext); ok {
+					expandedFilename, err := ctx.Macros.Expand(h.HTTP.Logger, filename)
+					if err != nil {
+						return fmt.Errorf("-bodyfrom macro expansion failed: %w", err)
+					}
+					filename = expandedFilename
+				}
+			}
 			body, err := h.readBodyFromFile(filename)
 			if err != nil {
 				return fmt.Errorf("-bodyfrom failed: %w", err)
 			}
 			opts.Body = body
-			i++
 		case "-chunked":
 			opts.Chunked = true
 		case "-gzip":
@@ -293,12 +308,27 @@ func (h *Handler) handleTxResp(args []string) error {
 				return fmt.Errorf("-bodyfrom requires an argument")
 			}
 			filename := args[i+1]
+			i++
+			// Check if the next token should be concatenated (e.g., /path after ${macro})
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") && strings.HasPrefix(args[i+1], "/") {
+				filename += args[i+1]
+				i++
+			}
+			// Expand macros in filename
+			if h.Context != nil {
+				if ctx, ok := h.Context.(*vtc.ExecContext); ok {
+					expandedFilename, err := ctx.Macros.Expand(h.HTTP.Logger, filename)
+					if err != nil {
+						return fmt.Errorf("-bodyfrom macro expansion failed: %w", err)
+					}
+					filename = expandedFilename
+				}
+			}
 			body, err := h.readBodyFromFile(filename)
 			if err != nil {
 				return fmt.Errorf("-bodyfrom failed: %w", err)
 			}
 			opts.Body = body
-			i++
 		case "-chunked":
 			opts.Chunked = true
 		case "-gzip":

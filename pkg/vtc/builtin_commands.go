@@ -412,6 +412,11 @@ func cmdFeature(args []string, priv interface{}, logger *logging.Logger) error {
 			}
 			logger.Debug("feature: IPv6 is available")
 
+		case "ignore_unknown_macro":
+			// Enable mode where undefined macros are kept as literal strings
+			ctx.Macros.SetIgnoreUndefined(true)
+			logger.Debug("feature: ignore_unknown_macro enabled")
+
 		default:
 			return fmt.Errorf("feature: unknown feature check: %s", args[i])
 		}

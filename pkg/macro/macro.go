@@ -11,8 +11,9 @@ import (
 
 // Store manages macro definitions and expansion
 type Store struct {
-	macros map[string]string
-	mutex  sync.RWMutex
+	macros          map[string]string
+	ignoreUndefined bool
+	mutex           sync.RWMutex
 }
 
 // New creates a new macro store
@@ -95,15 +96,31 @@ func (ms *Store) Expand(logger *logging.Logger, text string) (string, error) {
 			// Try dynamic macro expansion (e.g., functions)
 			value, ok = ms.expandDynamic(logger, macroName)
 			if !ok {
-				if logger != nil {
-					logger.Error("Macro ${%s} not found", macroName)
-				}
-				return "", fmt.Errorf("macro ${%s} not found", macroName)
-			}
-		}
+				// Check if we should ignore undefined macros
+				ms.mutex.RLock()
+				ignoreUndefined := ms.ignoreUndefined
+				ms.mutex.RUnlock()
 
-		// Append macro value
-		result.WriteString(value)
+				if ignoreUndefined {
+					// Keep the macro reference as a literal string
+					result.WriteString("${")
+					result.WriteString(macroName)
+					result.WriteString("}")
+				} else {
+					// Return error for undefined macro
+					if logger != nil {
+						logger.Error("Macro ${%s} not found", macroName)
+					}
+					return "", fmt.Errorf("macro ${%s} not found", macroName)
+				}
+			} else {
+				// Append the dynamically expanded value
+				result.WriteString(value)
+			}
+		} else {
+			// Append macro value
+			result.WriteString(value)
+		}
 
 		// Move past the macro
 		text = text[end+1:]
@@ -185,6 +202,13 @@ func (ms *Store) Exists(name string) bool {
 	defer ms.mutex.RUnlock()
 	_, ok := ms.macros[name]
 	return ok
+}
+
+// SetIgnoreUndefined sets whether to ignore undefined macros (keep them as literal strings)
+func (ms *Store) SetIgnoreUndefined(ignore bool) {
+	ms.mutex.Lock()
+	defer ms.mutex.Unlock()
+	ms.ignoreUndefined = ignore
 }
 
 // DefineMultiple defines multiple macros at once
